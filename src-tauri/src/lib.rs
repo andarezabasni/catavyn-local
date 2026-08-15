@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod db;
 mod error;
+mod reminders;
 mod repo;
 mod state;
 mod storage;
@@ -19,6 +20,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -80,6 +82,11 @@ pub fn run() {
             commands::read_attachment_thumbnail,
             commands::delete_attachment,
             commands::reveal_attachment,
+            commands::get_setting,
+            commands::set_setting,
+            commands::get_reminders_enabled,
+            commands::set_reminders_enabled,
+            commands::poll_due_reminders,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

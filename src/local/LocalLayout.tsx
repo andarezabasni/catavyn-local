@@ -1,5 +1,6 @@
-import { Home, FileText, Tag, Pin, Trash2, Settings, Moon, Sun } from 'lucide-react'
+import { Home, FileText, Tag, Pin, Trash2, Settings, Moon, Sun, Bell, BellOff } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
+import { useTaskReminders } from './hooks/useTaskReminders'
 import appLogo from '../assets/logo.png'
 
 // Local desktop navigation. Mirrors the original Catavyn Sidebar look but drops
@@ -27,6 +28,8 @@ export default function LocalLayout({
   children: React.ReactNode
 }) {
   const { isDark, toggleTheme } = useTheme()
+  // Mounted once here so the reminder poller runs on every view.
+  const { enabled: remindersOn, ready: remindersReady, toggle: toggleReminders } = useTaskReminders()
 
   return (
     <div className="min-h-screen bg-bg-page">
@@ -49,6 +52,20 @@ export default function LocalLayout({
             </button>
           ))}
         </nav>
+        <button
+          type="button"
+          onClick={() => void toggleReminders()}
+          disabled={!remindersReady}
+          aria-label={remindersOn ? 'Turn off task reminders' : 'Turn on task reminders'}
+          className={`flex flex-col items-center gap-1 w-14 py-3 rounded-xl transition-colors disabled:opacity-40 ${
+            remindersOn
+              ? 'text-accent-gold hover:bg-accent-gold/10'
+              : 'text-text-muted hover:text-text-secondary hover:bg-black/5 dark:hover:bg-white/5'
+          }`}
+        >
+          {remindersOn ? <Bell size={20} strokeWidth={1.75} /> : <BellOff size={20} strokeWidth={1.75} />}
+          <span className="text-[10px] font-medium">Remind</span>
+        </button>
         <button
           type="button"
           onClick={toggleTheme}

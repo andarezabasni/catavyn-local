@@ -4,9 +4,11 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::attachments as fs_attach;
 use crate::error::{AppError, AppResult};
+use crate::reminders::{self, DueReminder};
 use crate::repo::attachments::{self, Attachment, NewAttachment};
 use crate::repo::categories::{self, Category, CategoryPatch, NewCategory};
 use crate::repo::notes::{self, NewNote, Note, NotePatch, NoteQuery};
+use crate::repo::settings;
 use crate::repo::tags::{self, NewTag, NoteTagLink, Tag};
 use crate::repo::tasks::{self, NewTask, Task, TaskPatch};
 use crate::state::AppState;
@@ -371,4 +373,98 @@ pub fn reveal_attachment(app: AppHandle, state: State<AppState>, id: String) -> 
         .reveal_item_in_dir(abs)
         .map_err(|e| AppError::Other(e.to_string()))?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Settings (key/value) + task reminders
+// ---------------------------------------------------------------------------
+
+const REMINDERS_ENABLED_KEY: &str = "reminders_enabled";
+// Stored as JSON: { "date": "YYYY-MM-DD", "ids": ["..."] }. Resets per local
+// day so a task is never notified twice, matching the original web behavior.
+const REMINDERS_SENT_KEY: &str = "reminders_sent";
+// Don't fire for tasks that became due more than this many seconds ago.
+const LATE_WINDOW_SECS: i64 = 10 * 60;
+
+#[tauri::command]
+pub fn get_setting(state: State<AppState>, key: String) -> AppResult<Option<String>> {
+    state.with_conn(|conn| settings::get(conn, &key))
+}
+
+#[tauri::command]
+pub fn set_setting(state: State<AppState>, key: String, value: String) -> AppResult<()> {
+    state.with_tx(|tx| settings::set(tx, &key, &value))
+}
+
+#[tauri::command]
+pub fn get_reminders_enabled(state: State<AppState>) -> AppResult<bool> {
+    Ok(state.with_conn(|conn| settings::get(conn, REMINDERS_ENABLED_KEY))? == Some("on".into()))
+}
+
+#[tauri::command]
+pub fn set_reminders_enabled(state: State<AppState>, enabled: bool) -> AppResult<()> {
+    state.with_tx(|tx| settings::set(tx, REMINDERS_ENABLED_KEY, if enabled { "on" } else { "off" }))
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct SentRecord {
+    date: String,
+    ids: Vec<String>,
+}
+
+/// Compute which tasks are due right now and haven't been notified yet, using
+/// the caller-provided local wall-clock time. Marks fired + stale tasks as
+/// sent (persisted, resets per local day) so notifications never repeat or
+/// spam on restart. Returns the reminders the frontend should display via
+/// tauri-plugin-notification. Firing the OS notification is the frontend's job;
+/// this keeps all scheduling logic testable and off the platform layer.
+#[tauri::command]
+pub fn poll_due_reminders(
+    state: State<AppState>,
+    now_local: String,
+) -> AppResult<Vec<DueReminder>> {
+    // Respect the user's preference.
+    if state.with_conn(|conn| settings::get(conn, REMINDERS_ENABLED_KEY))? != Some("on".into()) {
+        return Ok(Vec::new());
+    }
+
+    // Parse the local datetime string ("YYYY-MM-DDTHH:MM:SS") sent by the
+    // frontend (which owns the Windows timezone). No tz data is persisted.
+    let now = chrono::NaiveDateTime::parse_from_str(&now_local, "%Y-%m-%dT%H:%M:%S")
+        .map_err(|e| AppError::Other(format!("invalid now_local: {e}")))?;
+    let today = now.date().format("%Y-%m-%d").to_string();
+
+    // Load today's due tasks and the sent-set (reset if the date rolled over).
+    let tasks = state.with_conn(|conn| tasks::list(conn, Some(&today)))?;
+    let mut sent: SentRecord = state
+        .with_conn(|conn| settings::get(conn, REMINDERS_SENT_KEY))?
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    if sent.date != today {
+        sent = SentRecord { date: today.clone(), ids: Vec::new() };
+    }
+    let sent_set: std::collections::HashSet<String> = sent.ids.iter().cloned().collect();
+
+    let due = reminders::due_reminders(&tasks, now, &sent_set, LATE_WINDOW_SECS);
+    let stale = reminders::stale_due_ids(&tasks, now, &sent_set, LATE_WINDOW_SECS);
+
+    // Record everything we surfaced or suppressed so it never repeats.
+    let mut new_ids = sent.ids.clone();
+    for r in &due {
+        if !new_ids.contains(&r.task_id) {
+            new_ids.push(r.task_id.clone());
+        }
+    }
+    for id in stale {
+        if !new_ids.contains(&id) {
+            new_ids.push(id);
+        }
+    }
+    if new_ids.len() != sent.ids.len() || sent.date != today {
+        let record = SentRecord { date: today, ids: new_ids };
+        let json = serde_json::to_string(&record)?;
+        state.with_tx(|tx| settings::set(tx, REMINDERS_SENT_KEY, &json))?;
+    }
+
+    Ok(due)
 }

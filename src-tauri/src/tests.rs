@@ -667,3 +667,96 @@ fn fts_scales_to_larger_dataset() {
     assert_eq!(prefix.len(), 1000);
     cleanup(&dir);
 }
+
+// --- Task reminder scheduling logic (pure, no OS layer) ------------------
+mod reminder_tests {
+    use crate::reminders::{due_reminders, stale_due_ids};
+    use crate::repo::tasks::Task;
+    use std::collections::HashSet;
+
+    fn task(id: &str, date: Option<&str>, time: Option<&str>, completed: bool) -> Task {
+        Task {
+            id: id.into(),
+            title: format!("Task {id}"),
+            description: String::new(),
+            due_date: date.map(String::from),
+            due_time: time.map(String::from),
+            is_completed: completed,
+            priority: "low".into(),
+            position: 0,
+            created_at: "2025-01-01T00:00:00+00:00".into(),
+            updated_at: "2025-01-01T00:00:00+00:00".into(),
+        }
+    }
+
+    fn at(s: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").unwrap()
+    }
+
+    #[test]
+    fn fires_for_due_task_with_time() {
+        let tasks = [task("a", Some("2025-06-01"), Some("09:00"), false)];
+        let now = at("2025-06-01T09:00:30");
+        let due = due_reminders(&tasks, now, &HashSet::new(), 600);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].task_id, "a");
+        assert_eq!(due[0].due_time, "09:00");
+    }
+
+    #[test]
+    fn does_not_fire_before_due() {
+        let tasks = [task("a", Some("2025-06-01"), Some("09:00"), false)];
+        let now = at("2025-06-01T08:59:59");
+        assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 0);
+    }
+
+    #[test]
+    fn skips_completed_task() {
+        let tasks = [task("a", Some("2025-06-01"), Some("09:00"), true)];
+        let now = at("2025-06-01T09:01:00");
+        assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 0);
+    }
+
+    #[test]
+    fn skips_task_without_time() {
+        let tasks = [task("a", Some("2025-06-01"), None, false)];
+        let now = at("2025-06-01T23:59:00");
+        assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 0);
+    }
+
+    #[test]
+    fn skips_malformed_date_or_time() {
+        let tasks = [
+            task("a", Some("not-a-date"), Some("09:00"), false),
+            task("b", Some("2025-06-01"), Some("99:99"), false),
+        ];
+        let now = at("2025-06-01T09:01:00");
+        assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 0);
+    }
+
+    #[test]
+    fn prevents_duplicate_when_already_sent() {
+        let tasks = [task("a", Some("2025-06-01"), Some("09:00"), false)];
+        let now = at("2025-06-01T09:00:30");
+        let mut sent = HashSet::new();
+        sent.insert("a".to_string());
+        assert_eq!(due_reminders(&tasks, now, &sent, 600).len(), 0);
+    }
+
+    #[test]
+    fn stale_tasks_are_suppressed_but_marked() {
+        // Due 30 minutes ago, window is 10 minutes -> don't fire, but mark sent.
+        let tasks = [task("a", Some("2025-06-01"), Some("09:00"), false)];
+        let now = at("2025-06-01T09:30:00");
+        assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 0);
+        let stale = stale_due_ids(&tasks, now, &HashSet::new(), 600);
+        assert_eq!(stale, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn accepts_hh_mm_ss_time() {
+        let tasks = [task("a", Some("2025-06-01"), Some("09:00:00"), false)];
+        let now = at("2025-06-01T09:02:00");
+        assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 1);
+    }
+}

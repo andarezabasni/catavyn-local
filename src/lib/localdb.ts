@@ -73,6 +73,13 @@ export interface StorageStatus {
   data_dir: string | null
 }
 
+export interface DueReminder {
+  task_id: string
+  title: string
+  due_date: string
+  due_time: string
+}
+
 export interface StorageUsage {
   database_bytes: number
   images_bytes: number
@@ -196,8 +203,7 @@ export const localdb = {
   // attachments — bytes are sent/received as number arrays (Tauri encodes
   // efficiently over IPC; we avoid base64 for filesystem-backed files).
   listAttachments: (noteId: string) =>
-    invoke<LocalAttachment[]>('list_attachments', { noteId }),
-  addAttachment: (noteId: string, originalFilename: string, mimeType: string, bytes: Uint8Array) =>
+    invoke<LocalAttachment[]>('list_attachments', { noteId }),  addAttachment: (noteId: string, originalFilename: string, mimeType: string, bytes: Uint8Array) =>
     invoke<LocalAttachment>('add_attachment', {
       noteId,
       originalFilename,
@@ -210,4 +216,17 @@ export const localdb = {
     invoke<number[]>('read_attachment_thumbnail', { id }).then(a => new Uint8Array(a)),
   deleteAttachment: (id: string) => invoke<void>('delete_attachment', { id }),
   revealAttachment: (id: string) => invoke<void>('reveal_attachment', { id }),
+
+  // settings (key/value)
+  getSetting: (key: string) => invoke<string | null>('get_setting', { key }),
+  setSetting: (key: string, value: string) => invoke<void>('set_setting', { key, value }),
+
+  // task reminders
+  getRemindersEnabled: () => invoke<boolean>('get_reminders_enabled'),
+  setRemindersEnabled: (enabled: boolean) =>
+    invoke<void>('set_reminders_enabled', { enabled }),
+  // now_local is the caller's local wall-clock time (YYYY-MM-DDTHH:MM:SS);
+  // the Windows timezone lives in the frontend, never in the database.
+  pollDueReminders: (nowLocal: string) =>
+    invoke<DueReminder[]>('poll_due_reminders', { nowLocal }),
 }
