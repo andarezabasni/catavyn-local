@@ -119,6 +119,12 @@ const MIGRATIONS: &[&str] = &[
         VALUES (new.rowid, new.title, new.content);
     END;
     "#,
+    // --- Migration 3: attachment thumbnails ------------------------------
+    // Records the relative path of a generated thumbnail (NULL for non-image
+    // or small attachments). Kept relative to the data dir for portability.
+    r#"
+    ALTER TABLE attachments ADD COLUMN thumbnail_path TEXT;
+    "#,
 ];
 
 /// Number of defined migrations (used by tests to assert the applied version).

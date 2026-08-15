@@ -39,6 +39,9 @@ interface NoteEditorProps {
   // Collaboration
   noteId?: string
   onShare?: () => void
+  // Optional extra content rendered below the editor body (Local uses this for
+  // the attachment panel; web leaves it undefined).
+  belowEditor?: React.ReactNode
 }
 
 export default function NoteEditor({
@@ -64,6 +67,7 @@ export default function NoteEditor({
   onOpenSubNote,
   noteId,
   onShare,
+  belowEditor,
 }: NoteEditorProps) {
   const [title, setTitle] = useState(initialTitle)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -676,6 +680,9 @@ export default function NoteEditor({
           editor={editor}
           className="tiptap-editor min-h-[50vh] text-text-secondary text-sm leading-relaxed"
         />
+
+        {/* Extra content (e.g. attachments in Local mode) */}
+        {belowEditor}
 
         {/* Sub-notes panel */}
         {(onNewSubNote || subNotes.length > 0) && (

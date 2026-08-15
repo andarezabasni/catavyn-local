@@ -1,3 +1,4 @@
+mod attachments;
 mod commands;
 mod config;
 mod db;
@@ -73,6 +74,12 @@ pub fn run() {
             commands::create_task,
             commands::update_task,
             commands::delete_task,
+            commands::list_attachments,
+            commands::add_attachment,
+            commands::read_attachment,
+            commands::read_attachment_thumbnail,
+            commands::delete_attachment,
+            commands::reveal_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,9 +3,10 @@
 
 use rusqlite::Connection;
 
+use crate::attachments as fs_attach;
 use crate::config;
 use crate::db;
-use crate::repo::{categories, notes, tags, tasks};
+use crate::repo::{attachments, categories, notes, tags, tasks};
 use crate::storage;
 
 /// Create a fresh, migrated database in a unique temp data directory.
@@ -347,6 +348,213 @@ fn portability_note_readable_from_copied_dir() {
     let conn = db::open(&config::db_path(&b)).unwrap();
     let got = notes::get(&conn, &id).unwrap().unwrap();
     assert_eq!(got.content, "data");
+
+    std::fs::remove_dir_all(&base).ok();
+}
+
+// A small real PNG (generated in-memory) so `image` can decode dimensions.
+fn tiny_png() -> Vec<u8> {
+    let img = image::RgbImage::from_pixel(4, 3, image::Rgb([10, 20, 30]));
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
+    buf.into_inner()
+}
+
+// Build a larger real PNG (800x600) to force thumbnail generation.
+fn big_png() -> Vec<u8> {
+    let img = image::RgbImage::from_fn(800, 600, |x, _| {
+        image::Rgb([(x % 256) as u8, 100, 150])
+    });
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
+    buf.into_inner()
+}
+
+#[test]
+fn attachment_metadata_and_file_lifecycle() {
+    let (dir, conn) = fresh_db();
+    let note = notes::create(&conn, notes::NewNote { title: Some("with image".into()), ..Default::default() }).unwrap();
+
+    // Store a small image (no thumbnail expected).
+    let id = attachments::generate_id();
+    let png = tiny_png();
+    let stored = fs_attach::store_attachment(&dir, &id, "user photo.png", "image/png", &png).unwrap();
+    assert!(stored.stored_filename.starts_with(&id), "stored filename is UUID-based, not user-provided");
+    assert!(stored.relative_path.starts_with("attachments/images/"));
+    assert_eq!(stored.width, Some(4));
+    assert_eq!(stored.height, Some(3));
+    assert!(stored.thumbnail_path.is_none(), "tiny image needs no thumbnail");
+
+    let att = attachments::create(
+        &conn,
+        &id,
+        attachments::NewAttachment {
+            note_id: note.id.clone(),
+            original_filename: "user photo.png".into(),
+            stored_filename: stored.stored_filename.clone(),
+            relative_path: stored.relative_path.clone(),
+            mime_type: "image/png".into(),
+            file_size: stored.file_size,
+            width: stored.width,
+            height: stored.height,
+            thumbnail_path: stored.thumbnail_path.clone(),
+        },
+    )
+    .unwrap();
+
+    // Retrieval + file exists.
+    let list = attachments::list_for_note(&conn, &note.id).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, att.id);
+    let abs = fs_attach::resolve_within(&dir, &att.relative_path).unwrap();
+    assert!(abs.exists());
+    let bytes = fs_attach::read_relative(&dir, &att.relative_path).unwrap();
+    assert_eq!(bytes, png);
+
+    // Delete files + row; files gone.
+    fs_attach::delete_files(&dir, &att.relative_path, att.thumbnail_path.as_deref()).unwrap();
+    attachments::delete_row(&conn, &att.id).unwrap();
+    assert!(!abs.exists());
+    assert_eq!(attachments::list_for_note(&conn, &note.id).unwrap().len(), 0);
+
+    cleanup(&dir);
+}
+
+#[test]
+fn large_image_gets_thumbnail() {
+    let (dir, _conn) = fresh_db();
+    let id = attachments::generate_id();
+    let png = big_png();
+    let stored = fs_attach::store_attachment(&dir, &id, "big.png", "image/png", &png).unwrap();
+    assert_eq!(stored.width, Some(800));
+    assert_eq!(stored.height, Some(600));
+    let thumb = stored.thumbnail_path.expect("large image should get a thumbnail");
+    assert!(thumb.starts_with("attachments/thumbnails/"));
+    assert!(fs_attach::resolve_within(&dir, &thumb).unwrap().exists());
+    cleanup(&dir);
+}
+
+#[test]
+fn attachment_cascades_when_note_hard_deleted() {
+    let (dir, conn) = fresh_db();
+    let note = notes::create(&conn, notes::NewNote::default()).unwrap();
+    let id = attachments::generate_id();
+    let png = tiny_png();
+    let stored = fs_attach::store_attachment(&dir, &id, "f.png", "image/png", &png).unwrap();
+    attachments::create(&conn, &id, attachments::NewAttachment {
+        note_id: note.id.clone(),
+        original_filename: "f.png".into(),
+        stored_filename: stored.stored_filename,
+        relative_path: stored.relative_path,
+        mime_type: "image/png".into(),
+        file_size: stored.file_size,
+        width: stored.width,
+        height: stored.height,
+        thumbnail_path: stored.thumbnail_path,
+    }).unwrap();
+
+    // FK ON DELETE CASCADE removes the metadata row (file cleanup is the
+    // command layer's job; here we assert the row cascade).
+    notes::hard_delete(&conn, &note.id).unwrap();
+    assert_eq!(attachments::list_for_note(&conn, &note.id).unwrap().len(), 0);
+    cleanup(&dir);
+}
+
+#[test]
+fn missing_file_read_errors_cleanly() {
+    let (dir, _conn) = fresh_db();
+    // No panic — a clean error for a path that doesn't exist.
+    let res = fs_attach::read_relative(&dir, "attachments/images/does-not-exist.png");
+    assert!(res.is_err());
+    cleanup(&dir);
+}
+
+#[test]
+fn path_traversal_is_rejected() {
+    let (dir, _conn) = fresh_db();
+    for bad in [
+        "../secret.txt",
+        "../../etc/passwd",
+        "attachments/../../escape.png",
+        "attachments/images/../../../escape.png",
+    ] {
+        assert!(fs_attach::resolve_within(&dir, bad).is_err(), "should reject {bad}");
+        assert!(fs_attach::read_relative(&dir, bad).is_err(), "should reject read {bad}");
+    }
+    // Absolute path rejected too.
+    #[cfg(windows)]
+    assert!(fs_attach::resolve_within(&dir, "C:/Windows/System32/x.dll").is_err());
+    #[cfg(not(windows))]
+    assert!(fs_attach::resolve_within(&dir, "/etc/passwd").is_err());
+    cleanup(&dir);
+}
+
+#[test]
+fn storage_usage_includes_attachment_breakdown() {
+    let (dir, _conn) = fresh_db();
+    let id = attachments::generate_id();
+    let png = big_png();
+    fs_attach::store_attachment(&dir, &id, "big.png", "image/png", &png).unwrap();
+    // A non-image file.
+    let fid = attachments::generate_id();
+    fs_attach::store_attachment(&dir, &fid, "notes.txt", "text/plain", b"hello world").unwrap();
+
+    let usage = storage::usage(&dir);
+    assert!(usage.images_bytes > 0);
+    assert!(usage.files_bytes > 0);
+    assert!(usage.thumbnails_bytes > 0);
+    assert_eq!(usage.attachments_bytes, usage.images_bytes + usage.files_bytes + usage.thumbnails_bytes);
+    assert!(usage.total_bytes >= usage.database_bytes + usage.attachments_bytes);
+    cleanup(&dir);
+}
+
+#[test]
+fn attachments_are_portable_across_copied_dir() {
+    let base = std::env::temp_dir().join(format!("catavyn_att_{}", uuid::Uuid::new_v4()));
+    let a = base.join("CatavynData");
+    let b = base.join("Copied");
+    config::ensure_data_dir(&a).unwrap();
+
+    let (note_id, att_id, rel_path, thumb_path) = {
+        let mut conn = db::open(&config::db_path(&a)).unwrap();
+        db::migrate(&mut conn).unwrap();
+        let note = notes::create(&conn, notes::NewNote { title: Some("p".into()), ..Default::default() }).unwrap();
+        let id = attachments::generate_id();
+        let stored = fs_attach::store_attachment(&a, &id, "big.png", "image/png", &big_png()).unwrap();
+        let att = attachments::create(&conn, &id, attachments::NewAttachment {
+            note_id: note.id.clone(),
+            original_filename: "big.png".into(),
+            stored_filename: stored.stored_filename,
+            relative_path: stored.relative_path.clone(),
+            mime_type: "image/png".into(),
+            file_size: stored.file_size,
+            width: stored.width,
+            height: stored.height,
+            thumbnail_path: stored.thumbnail_path.clone(),
+        }).unwrap();
+        (note.id, att.id, att.relative_path, att.thumbnail_path)
+    };
+
+    // Verified copy (same path the migrate command uses) A -> B.
+    storage::migrate_data_dir(&a, &b, false).unwrap();
+
+    // Reopen from B: note + attachment metadata + files all present.
+    let conn = db::open(&config::db_path(&b)).unwrap();
+    assert!(notes::get(&conn, &note_id).unwrap().is_some());
+    let att = attachments::get(&conn, &att_id).unwrap().unwrap();
+    assert_eq!(att.relative_path, rel_path);
+    // Original readable from the copied dir.
+    let bytes = fs_attach::read_relative(&b, &rel_path).unwrap();
+    assert!(!bytes.is_empty());
+    // Thumbnail readable too.
+    let thumb = thumb_path.expect("thumbnail should exist");
+    assert!(fs_attach::read_relative(&b, &thumb).unwrap().len() > 0);
+    // relative_path carries no drive/absolute component.
+    assert!(!rel_path.contains(':') && !rel_path.starts_with('/'));
 
     std::fs::remove_dir_all(&base).ok();
 }

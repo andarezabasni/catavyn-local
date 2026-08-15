@@ -6,6 +6,7 @@ import { useTags } from '../hooks/useTags'
 import NoteEditor from '../../components/notes/NoteEditor'
 import NoteCard from '../../components/notes/NoteCard'
 import LocalNotePinModal from '../components/LocalNotePinModal'
+import AttachmentPanel from '../components/AttachmentPanel'
 import SearchBar from '../../components/ui/SearchBar'
 import { NoteCardSkeleton, NoteListRowSkeleton } from '../../components/ui/Skeleton'
 import EmptyState from '../../components/ui/EmptyState'
@@ -261,6 +262,7 @@ export default function LocalNotesPage({
           onTagAdd={handleTagAdd}
           onTagRemove={handleTagRemove}
           onTagCreate={handleTagCreate}
+          belowEditor={editingNoteId ? <AttachmentPanel noteId={editingNoteId} /> : undefined}
         />
         {pinModal && (
           <LocalNotePinModal
@@ -300,6 +302,7 @@ export default function LocalNotesPage({
             onTagRemove={handleTagRemove}
             onTagCreate={handleTagCreate}
             onOpenSubNote={sub => openSubNote(editingNote!, sub)}
+            belowEditor={<AttachmentPanel noteId={editingNoteId} />}
           />
         ) : (
           <NoteEditor

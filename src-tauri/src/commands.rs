@@ -2,7 +2,9 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::attachments as fs_attach;
 use crate::error::{AppError, AppResult};
+use crate::repo::attachments::{self, Attachment, NewAttachment};
 use crate::repo::categories::{self, Category, CategoryPatch, NewCategory};
 use crate::repo::notes::{self, NewNote, Note, NotePatch, NoteQuery};
 use crate::repo::tags::{self, NewTag, NoteTagLink, Tag};
@@ -163,12 +165,26 @@ pub fn restore_note(state: State<AppState>, id: String) -> AppResult<()> {
 
 #[tauri::command]
 pub fn permanently_delete_note(state: State<AppState>, id: String) -> AppResult<()> {
-    state.with_tx(|tx| notes::hard_delete(tx, &id))
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    // Collect attachment files for this note and its sub-notes before the DB
+    // cascade removes the rows, so we can delete the files afterwards.
+    let files = state.with_conn(|conn| attachments::files_under_note(conn, &id))?;
+    state.with_tx(|tx| notes::hard_delete(tx, &id))?;
+    for (rel, thumb) in files {
+        let _ = fs_attach::delete_files(&data_dir, &rel, thumb.as_deref());
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn empty_trash(state: State<AppState>) -> AppResult<usize> {
-    state.with_tx(|tx| notes::empty_trash(tx))
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    let files = state.with_conn(|conn| attachments::files_under_trashed_notes(conn))?;
+    let removed = state.with_tx(|tx| notes::empty_trash(tx))?;
+    for (rel, thumb) in files {
+        let _ = fs_attach::delete_files(&data_dir, &rel, thumb.as_deref());
+    }
+    Ok(removed)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,4 +271,104 @@ pub fn update_task(state: State<AppState>, id: String, patch: TaskPatch) -> AppR
 #[tauri::command]
 pub fn delete_task(state: State<AppState>, id: String) -> AppResult<()> {
     state.with_tx(|tx| tasks::delete(tx, &id))
+}
+
+// ---------------------------------------------------------------------------
+// Attachments
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn list_attachments(state: State<AppState>, note_id: String) -> AppResult<Vec<Attachment>> {
+    state.with_conn(|conn| attachments::list_for_note(conn, &note_id))
+}
+
+/// Store attachment bytes on the filesystem and record its metadata. The bytes
+/// arrive from the renderer as a byte array (Tauri encodes efficiently; we
+/// avoid base64). The file is written before the DB row, and if the row insert
+/// fails the just-written files are cleaned up so the DB never claims a file
+/// that isn't tracked.
+#[tauri::command]
+pub fn add_attachment(
+    state: State<AppState>,
+    note_id: String,
+    original_filename: String,
+    mime_type: String,
+    bytes: Vec<u8>,
+) -> AppResult<Attachment> {
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    let id = attachments::generate_id();
+
+    let stored = fs_attach::store_attachment(&data_dir, &id, &original_filename, &mime_type, &bytes)?;
+
+    let insert = NewAttachment {
+        note_id,
+        original_filename,
+        stored_filename: stored.stored_filename,
+        relative_path: stored.relative_path.clone(),
+        mime_type,
+        file_size: stored.file_size,
+        width: stored.width,
+        height: stored.height,
+        thumbnail_path: stored.thumbnail_path.clone(),
+    };
+
+    match state.with_tx(|tx| attachments::create(tx, &id, insert)) {
+        Ok(a) => Ok(a),
+        Err(e) => {
+            // Roll back the filesystem write to avoid orphaned files.
+            let _ = fs_attach::delete_files(&data_dir, &stored.relative_path, stored.thumbnail_path.as_deref());
+            Err(e)
+        }
+    }
+}
+
+/// Return the raw bytes of an attachment file for previewing in the renderer.
+/// Path is resolved from the stored (validated) relative path — never from a
+/// renderer-supplied filesystem path.
+#[tauri::command]
+pub fn read_attachment(state: State<AppState>, id: String) -> AppResult<Vec<u8>> {
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    let att = state
+        .with_conn(|conn| attachments::get(conn, &id))?
+        .ok_or_else(|| AppError::Other("attachment not found".into()))?;
+    fs_attach::read_relative(&data_dir, &att.relative_path)
+}
+
+/// Return the thumbnail bytes if one exists, otherwise the original bytes.
+#[tauri::command]
+pub fn read_attachment_thumbnail(state: State<AppState>, id: String) -> AppResult<Vec<u8>> {
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    let att = state
+        .with_conn(|conn| attachments::get(conn, &id))?
+        .ok_or_else(|| AppError::Other("attachment not found".into()))?;
+    let rel = att.thumbnail_path.as_deref().unwrap_or(&att.relative_path);
+    fs_attach::read_relative(&data_dir, rel)
+}
+
+/// Delete an attachment: remove files first, then the metadata row. If file
+/// removal fails we abort before touching the DB so the row keeps pointing at
+/// a real (still-present) file rather than silently claiming it exists.
+#[tauri::command]
+pub fn delete_attachment(state: State<AppState>, id: String) -> AppResult<()> {
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    let att = state.with_conn(|conn| attachments::get(conn, &id))?;
+    let Some(att) = att else { return Ok(()) };
+
+    fs_attach::delete_files(&data_dir, &att.relative_path, att.thumbnail_path.as_deref())?;
+    state.with_tx(|tx| attachments::delete_row(tx, &id))
+}
+
+/// Reveal an attachment file in the OS file manager.
+#[tauri::command]
+pub fn reveal_attachment(app: AppHandle, state: State<AppState>, id: String) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let data_dir = state.data_dir().ok_or(AppError::NoDataDirectory)?;
+    let att = state
+        .with_conn(|conn| attachments::get(conn, &id))?
+        .ok_or_else(|| AppError::Other("attachment not found".into()))?;
+    let abs = fs_attach::resolve_within(&data_dir, &att.relative_path)?;
+    app.opener()
+        .reveal_item_in_dir(abs)
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(())
 }

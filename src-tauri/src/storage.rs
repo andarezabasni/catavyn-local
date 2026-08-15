@@ -12,6 +12,9 @@ use crate::error::{AppError, AppResult};
 #[derive(Debug, Serialize)]
 pub struct StorageUsage {
     pub database_bytes: u64,
+    pub images_bytes: u64,
+    pub files_bytes: u64,
+    pub thumbnails_bytes: u64,
     pub attachments_bytes: u64,
     pub backups_bytes: u64,
     pub total_bytes: u64,
@@ -49,11 +52,18 @@ pub fn usage(data_dir: &Path) -> StorageUsage {
         + file_len(&db_main.with_extension("db-wal"))
         + file_len(&db_main.with_extension("db-shm"));
 
-    let attachments_bytes = dir_size(&data_dir.join("attachments"));
+    let attachments_root = data_dir.join("attachments");
+    let images_bytes = dir_size(&attachments_root.join("images"));
+    let files_bytes = dir_size(&attachments_root.join("files"));
+    let thumbnails_bytes = dir_size(&attachments_root.join("thumbnails"));
+    let attachments_bytes = images_bytes + files_bytes + thumbnails_bytes;
     let backups_bytes = dir_size(&data_dir.join("backups"));
 
     StorageUsage {
         database_bytes,
+        images_bytes,
+        files_bytes,
+        thumbnails_bytes,
         attachments_bytes,
         backups_bytes,
         total_bytes: database_bytes + attachments_bytes + backups_bytes,

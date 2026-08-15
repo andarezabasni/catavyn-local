@@ -146,7 +146,9 @@ export default function LocalSettingsPage({
         {usage ? (
           <div className="space-y-2 text-sm">
             <Row label="Database" value={formatBytes(usage.database_bytes)} />
-            <Row label="Attachments" value={formatBytes(usage.attachments_bytes)} />
+            <Row label="Images" value={formatBytes(usage.images_bytes)} />
+            <Row label="Files" value={formatBytes(usage.files_bytes)} />
+            <Row label="Thumbnails" value={formatBytes(usage.thumbnails_bytes)} />
             <Row label="Backups" value={formatBytes(usage.backups_bytes)} />
             <div className="border-t border-border pt-2">
               <Row label="Total" value={formatBytes(usage.total_bytes)} bold />

@@ -53,6 +53,21 @@ export interface LocalTask {
   updated_at: string
 }
 
+export interface LocalAttachment {
+  id: string
+  note_id: string
+  original_filename: string
+  stored_filename: string
+  relative_path: string
+  mime_type: string
+  file_size: number
+  width: number | null
+  height: number | null
+  thumbnail_path: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface StorageStatus {
   configured: boolean
   data_dir: string | null
@@ -60,6 +75,9 @@ export interface StorageStatus {
 
 export interface StorageUsage {
   database_bytes: number
+  images_bytes: number
+  files_bytes: number
+  thumbnails_bytes: number
   attachments_bytes: number
   backups_bytes: number
   total_bytes: number
@@ -174,4 +192,22 @@ export const localdb = {
   updateTask: (id: string, patch: TaskPatch) =>
     invoke<LocalTask | null>('update_task', { id, patch }),
   deleteTask: (id: string) => invoke<void>('delete_task', { id }),
+
+  // attachments — bytes are sent/received as number arrays (Tauri encodes
+  // efficiently over IPC; we avoid base64 for filesystem-backed files).
+  listAttachments: (noteId: string) =>
+    invoke<LocalAttachment[]>('list_attachments', { noteId }),
+  addAttachment: (noteId: string, originalFilename: string, mimeType: string, bytes: Uint8Array) =>
+    invoke<LocalAttachment>('add_attachment', {
+      noteId,
+      originalFilename,
+      mimeType,
+      bytes: Array.from(bytes),
+    }),
+  readAttachment: (id: string) =>
+    invoke<number[]>('read_attachment', { id }).then(a => new Uint8Array(a)),
+  readAttachmentThumbnail: (id: string) =>
+    invoke<number[]>('read_attachment_thumbnail', { id }).then(a => new Uint8Array(a)),
+  deleteAttachment: (id: string) => invoke<void>('delete_attachment', { id }),
+  revealAttachment: (id: string) => invoke<void>('reveal_attachment', { id }),
 }
