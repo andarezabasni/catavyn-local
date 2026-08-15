@@ -111,6 +111,10 @@ export default function NoteEditor({
       TaskItem.configure({ nested: false }),
     ],
     content: initialContent || '',
+    // Render on the client after mount. Tiptap v3 defaults to immediate render,
+    // which under React 19 in the Tauri WebView can leave the editor unmounted
+    // (blank note). Deferring to an effect fixes the blank editor.
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: 'prose-editor focus:outline-none',

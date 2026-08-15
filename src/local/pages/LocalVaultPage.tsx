@@ -51,8 +51,8 @@ function CredentialGate({
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="max-w-sm w-full bg-bg-card border border-border rounded-2xl p-8 text-center animate-fade-up">
+    <div className="min-h-screen flex items-center justify-center overflow-y-auto p-6">
+      <div className="max-w-sm w-full bg-bg-card border border-border rounded-2xl p-8 text-center animate-fade-up my-auto">
         <div className="flex justify-center mb-4">
           <div className="w-14 h-14 rounded-2xl bg-accent-gold/15 flex items-center justify-center">
             <Lock size={26} className="text-accent-gold" />
@@ -327,8 +327,8 @@ function VaultItemEditor({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-text-primary/20 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div className="bg-bg-card rounded-2xl border border-border shadow-xl w-full max-w-md pointer-events-auto animate-fade-up p-5 max-h-[85vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto p-4 pointer-events-none">
+        <div className="bg-bg-card rounded-2xl border border-border shadow-xl w-full max-w-md pointer-events-auto animate-fade-up p-5 my-auto">
           <h2 className="text-text-primary font-semibold text-base mb-4">
             {isEdit ? 'Edit item' : 'New item'}
           </h2>
