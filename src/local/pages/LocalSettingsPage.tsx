@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FolderOpen, FolderInput, RefreshCw, Trash2, HardDrive, AlertTriangle } from 'lucide-react'
-import { localdb, type StorageStatus, type StorageUsage } from '../../lib/localdb'
+import { FolderOpen, FolderInput, RefreshCw, Trash2, HardDrive, AlertTriangle, Archive, Upload } from 'lucide-react'
+import { localdb, type StorageStatus, type StorageUsage, type RestoreValidation } from '../../lib/localdb'
 import { toast } from '../../lib/toast'
 
 function formatBytes(bytes: number): string {
@@ -159,6 +159,9 @@ export default function LocalSettingsPage({
         )}
       </section>
 
+      {/* Backup & Restore */}
+      <BackupRestoreSection onRestored={onStatusChange} />
+
       {/* Danger zone */}
       <section className="bg-bg-card rounded-xl border border-red-200 dark:border-red-900/40 p-5">
         <div className="flex items-center gap-2 mb-3">
@@ -224,5 +227,148 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
       <span className={`text-text-secondary ${bold ? 'font-semibold text-text-primary' : ''}`}>{label}</span>
       <span className={`text-text-muted ${bold ? 'font-semibold text-text-primary' : ''}`}>{value}</span>
     </div>
+  )
+}
+
+function formatBytesLocal(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB']
+  let v = bytes / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`
+}
+
+// Backup & Restore. Backup writes one .catavyn file to a user-chosen location.
+// Restore validates in a temp dir first, then activates to a chosen directory
+// (new by default; existing requires explicit confirmation).
+function BackupRestoreSection({ onRestored }: { onRestored: (s: StorageStatus) => void }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [lastBackup, setLastBackup] = useState<string | null>(null)
+  const [pending, setPending] = useState<RestoreValidation | null>(null)
+
+  async function createBackup() {
+    setBusy('backup')
+    try {
+      const res = await localdb.createBackup()
+      if (res) {
+        setLastBackup(res.path)
+        toast.success(`Backup created (${formatBytesLocal(res.total_size)}, ${res.file_count} files)`)
+      }
+    } catch (e) {
+      toast.error(`Backup failed — your data is unchanged. ${e}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function chooseBackup() {
+    setBusy('validate')
+    try {
+      const v = await localdb.restoreValidate()
+      if (v) setPending(v)
+    } catch (e) {
+      toast.error(`This backup could not be validated. ${e}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function activate(allowExisting: boolean) {
+    if (!pending) return
+    setBusy('restore')
+    try {
+      const dest = await localdb.restoreActivate(pending.token, allowExisting)
+      if (dest) {
+        toast.success(`Restored to ${dest}`)
+        const s = await localdb.getStorageStatus()
+        onRestored(s)
+        setPending(null)
+      }
+    } catch (e) {
+      toast.error(String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function cancelRestore() {
+    if (pending) await localdb.restoreCancel(pending.token).catch(() => {})
+    setPending(null)
+  }
+
+  return (
+    <section className="bg-bg-card rounded-xl border border-border p-5 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Archive size={16} className="text-accent-gold" />
+        <h2 className="text-text-primary font-semibold text-sm">Backup &amp; Restore</h2>
+      </div>
+      <p className="text-text-muted text-[11px] mb-4 leading-relaxed">
+        A backup is a single <code>.catavyn</code> file containing your notes, tasks,
+        attachments, and Vault. The Vault stays encrypted inside the backup, but ordinary
+        notes and attachments are not — store the backup somewhere you trust.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void createBackup()}
+          disabled={!!busy}
+          className="flex items-center gap-1.5 rounded-lg bg-accent-gold px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+        >
+          <Archive size={14} />
+          {busy === 'backup' ? 'Creating…' : 'Create Backup'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void chooseBackup()}
+          disabled={!!busy}
+          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary hover:border-accent-gold/50 disabled:opacity-50 transition-colors"
+        >
+          <Upload size={14} />
+          {busy === 'validate' ? 'Validating…' : 'Restore Backup'}
+        </button>
+      </div>
+
+      {lastBackup && (
+        <p className="text-text-muted text-[11px] mt-3 break-all">Last backup: {lastBackup}</p>
+      )}
+
+      {pending && (
+        <div className="mt-4 rounded-lg border border-border bg-bg-page p-3">
+          <p className="text-text-primary text-xs font-medium mb-1">Backup validated</p>
+          <p className="text-text-muted text-[11px] mb-3">
+            Created {new Date(pending.created_at).toLocaleString()} · {pending.file_count} files ·{' '}
+            {formatBytesLocal(pending.total_size)}. Choose a destination folder to restore into
+            (a new/empty folder is safest).
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void activate(false)}
+              disabled={busy === 'restore'}
+              className="rounded-lg bg-accent-gold px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {busy === 'restore' ? 'Restoring…' : 'Choose folder & restore'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void activate(true)}
+              disabled={busy === 'restore'}
+              className="rounded-lg border border-red-300 dark:border-red-800 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
+            >
+              Restore into existing folder
+            </button>
+            <button
+              type="button"
+              onClick={() => void cancelRestore()}
+              className="rounded-lg px-3 py-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }

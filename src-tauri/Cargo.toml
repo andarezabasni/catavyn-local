@@ -43,3 +43,9 @@ chacha20poly1305 = "0.10"           # XChaCha20-Poly1305 AEAD
 zeroize = { version = "1", features = ["derive"] }  # zeroize key material
 getrandom = "0.2"                    # OS CSPRNG for salt/nonce/DEK
 totp-rs = "5"                        # TOTP generation (no manual crypto)
+
+# --- Backup & Restore ----------------------------------------------------
+# Single .catavyn = zstd(tar(...)). Streaming; no custom archive/compression.
+tar = "0.4"
+zstd = "0.13"
+sha2 = "0.10"                        # SHA-256 integrity manifest

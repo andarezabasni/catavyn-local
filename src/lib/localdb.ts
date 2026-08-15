@@ -105,6 +105,19 @@ export interface GeneratedTotp {
   seconds_remaining: number
 }
 
+export interface BackupResult {
+  path: string
+  file_count: number
+  total_size: number
+}
+
+export interface RestoreValidation {
+  created_at: string
+  file_count: number
+  total_size: number
+  token: string
+}
+
 export interface StorageUsage {
   database_bytes: number
   images_bytes: number
@@ -254,7 +267,6 @@ export const localdb = {
   // the Windows timezone lives in the frontend, never in the database.
   pollDueReminders: (nowLocal: string) =>
     invoke<DueReminder[]>('poll_due_reminders', { nowLocal }),
-
   // vault — keys never cross this boundary; only status, item metadata, and
   // the specific decrypted fields the UI requests are returned.
   vaultStatus: () => invoke<VaultStatus>('vault_status'),
@@ -272,4 +284,11 @@ export const localdb = {
     invoke<void>('vault_change_master_credential', { oldCredential, newCredential }),
   vaultGenerateTotp: (itemId: string) =>
     invoke<GeneratedTotp>('vault_generate_totp', { itemId }),
+
+  // backup & restore
+  createBackup: () => invoke<BackupResult | null>('create_backup'),
+  restoreValidate: () => invoke<RestoreValidation | null>('restore_validate'),
+  restoreCancel: (token: string) => invoke<void>('restore_cancel', { token }),
+  restoreActivate: (token: string, allowExisting: boolean) =>
+    invoke<string | null>('restore_activate', { token, allowExisting }),
 }

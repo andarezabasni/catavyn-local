@@ -1,4 +1,6 @@
 mod attachments;
+mod backup;
+mod backup_commands;
 mod commands;
 mod config;
 mod db;
@@ -14,6 +16,8 @@ mod vault_commands;
 mod tests;
 #[cfg(test)]
 mod tests_vault;
+#[cfg(test)]
+mod tests_backup;
 
 use tauri::Manager;
 
@@ -104,6 +108,10 @@ pub fn run() {
             vault_commands::vault_delete_item,
             vault_commands::vault_change_master_credential,
             vault_commands::vault_generate_totp,
+            backup_commands::create_backup,
+            backup_commands::restore_validate,
+            backup_commands::restore_cancel,
+            backup_commands::restore_activate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

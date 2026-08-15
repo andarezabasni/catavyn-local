@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use rusqlite::Connection;
 
+use crate::backup::RestorePreview;
 use crate::config::{self, AppConfig};
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -14,6 +16,8 @@ pub struct AppState {
     /// Path to `config.json` in the OS app-config directory.
     pub config_path: PathBuf,
     inner: Mutex<Inner>,
+    /// Pending validated restores awaiting activation, keyed by token.
+    restores: Mutex<HashMap<String, RestorePreview>>,
 }
 
 struct Inner {
@@ -27,7 +31,18 @@ impl AppState {
         Ok(Self {
             config_path,
             inner: Mutex::new(Inner { config, conn: None }),
+            restores: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Stash a validated restore preview under a token.
+    pub fn stash_restore(&self, token: String, preview: RestorePreview) {
+        self.restores.lock().unwrap().insert(token, preview);
+    }
+
+    /// Remove and return a pending restore preview.
+    pub fn take_restore(&self, token: &str) -> Option<RestorePreview> {
+        self.restores.lock().unwrap().remove(token)
     }
 
     /// Currently configured data directory, if any.
