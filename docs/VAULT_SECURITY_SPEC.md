@@ -9,6 +9,11 @@
 > (encrypted-store shape, container/AAD byte layout, Argon2id p, crash-safety
 > ordering, migration verification) are now fixed requirements.
 
+> Implementation note (Phase 3B): the Vault has been implemented per this
+> specification. Final dependency versions, benchmarked Argon2id parameters,
+> and known limitations are recorded in the appendix at the end of this
+> document.
+
 ## 1. Purpose
 
 Catavyn Local will contain a separate **Vault** for highly sensitive personal information:
@@ -1051,3 +1056,92 @@ Vault is complete only when:
 Security should be prioritized over convenience whenever the two conflict.
 
 This specification intentionally prefers a smaller, well-reviewed Vault over a feature-rich but questionable password manager.
+
+---
+
+## Appendix A — Phase 3B Implementation Record
+
+This appendix documents what was actually built. The normative sections above
+remain the source of truth for design intent.
+
+### A.1 Exact dependency versions
+
+Resolved against rustc 1.96.1 (see `src-tauri/Cargo.lock`):
+
+- `argon2` 0.5.3 — Argon2id key derivation (`hash_password_into`)
+- `chacha20poly1305` 0.10.1 — XChaCha20-Poly1305 AEAD
+- `zeroize` 1.9.0 (with `derive`) — key-material zeroization
+- `getrandom` 0.2.x — OS CSPRNG for salt, nonce, and DEK
+- `totp-rs` 5.7.2 — TOTP generation
+
+No custom cryptography was written. Base64 for `vault.meta` fields is a small
+in-crate encoder/decoder (no secrets are base64-only-protected; base64 is just
+a text encoding for the salt and the already-encrypted wrapped DEK).
+
+### A.2 Final Argon2id parameters + benchmark
+
+Measured on the target dev machine (release build), single derivation,
+`p = 1`:
+
+| m (KiB) | t | p | time |
+|--------:|--:|--:|-----:|
+| 65536   | 3 | 1 | 139 ms |
+| 98304   | 3 | 1 | 206 ms |
+| 131072  | 3 | 1 | 279 ms |
+| 131072  | 4 | 1 | 381 ms |
+| 196608  | 3 | 1 | 428 ms |
+
+**Chosen production parameters:** `m = 131072 KiB (128 MiB), t = 3, p = 1,
+output = 32 bytes` (~279 ms, within the 250–500 ms target; double the OWASP
+desktop memory floor). Defined as `KdfParams::PRODUCTION` in
+`src-tauri/src/vault/kdf.rs`. Tests use injected low-cost params
+(`m = 8192, t = 1, p = 1`); production never uses test parameters.
+
+Debug (non-release) derivation of the production params is ~3.7 s, so unlock
+is only interactive-fast in release builds — expected for a memory-hard KDF.
+
+### A.3 Final file format
+
+```
+<CatavynData>/vault/
+├── vault.meta   JSON: vault_format_version, kdf_algo, argon2_version,
+│                kdf_m_kib, kdf_t, kdf_p, salt_b64, enc_algo,
+│                wrapped_dek_b64, sequence, created_at, updated_at
+└── vault.db     SQLite table vault_items(item_id, item_type, created_at,
+                 updated_at, encrypted_payload BLOB)
+```
+
+`encrypted_payload` and `wrapped_dek_b64` both use EncryptedPayloadV1:
+`0x01 || nonce(24) || ciphertext+tag`. Item AAD =
+`"CATAVYN-VAULT-V1" 0x00 item_type 0x00 item_id`; wrapped-DEK AAD =
+`"CATAVYN-VAULT-V1" 0x00 "wrapped-dek"`.
+
+### A.4 Implemented commands
+
+`vault_status`, `vault_create`, `vault_unlock`, `vault_lock`,
+`vault_list_items`, `vault_get_item`, `vault_create_item`, `vault_update_item`,
+`vault_delete_item`, `vault_change_master_credential`, `vault_generate_totp`.
+No command exposes the KEK, DEK, or master credential.
+
+### A.5 Known limitations (honest)
+
+- The Vault is **not** protected against a compromised operating system
+  (malware with equivalent privileges can capture keystrokes, screen, clipboard,
+  or process memory). This is out of scope by design (§3).
+- Decrypted field values and generated TOTP codes necessarily exist in WebView
+  (JavaScript) memory while displayed; JS memory cannot be reliably zeroized.
+  Their lifetime is minimized but not guaranteed scrubbed.
+- The master credential transits the Tauri IPC boundary in memory (§24);
+  acceptable under the threat model, processed immediately and not persisted.
+- A 12-digit numeric PIN is ~39.9 bits of entropy and remains vulnerable to a
+  determined offline attacker with a copied Vault. Users are encouraged to use a
+  longer alphanumeric passphrase.
+- Auto-lock is enforced in the Rust session on access (and the UI polls status);
+  it is a 5-minute inactivity timeout, not a wall-clock guarantee against an
+  attacker who already has the process memory.
+- Clipboard clear after copying a secret is best-effort (~30 s) and will not
+  clobber newer clipboard contents.
+
+The Vault is **not** claimed to be "unbreakable" or "100% secure". It is
+designed so that a copy of the data directory cannot be read without the user's
+master credential, under the stated threat model.

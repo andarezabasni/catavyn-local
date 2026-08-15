@@ -1,4 +1,4 @@
-import { Home, FileText, Tag, Pin, Trash2, Settings, Moon, Sun, Bell, BellOff } from 'lucide-react'
+import { Home, FileText, Tag, Pin, Trash2, Settings, Moon, Sun, Bell, BellOff, ShieldCheck } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 import { useTaskReminders } from './hooks/useTaskReminders'
 import appLogo from '../assets/logo.png'
@@ -7,13 +7,14 @@ import appLogo from '../assets/logo.png'
 // cloud-only actions (sign out, collaboration, web task reminders). Uses simple
 // view state instead of react-router so the offline shell stays self-contained.
 
-export type LocalView = 'home' | 'notes' | 'tags' | 'pinned' | 'trash' | 'settings'
+export type LocalView = 'home' | 'notes' | 'tags' | 'pinned' | 'trash' | 'vault' | 'settings'
 
 const NAV_ITEMS: { view: LocalView; icon: typeof Home; label: string }[] = [
   { view: 'home', icon: Home, label: 'Home' },
   { view: 'notes', icon: FileText, label: 'Notes' },
   { view: 'tags', icon: Tag, label: 'Tags' },
   { view: 'pinned', icon: Pin, label: 'Pinned' },
+  { view: 'vault', icon: ShieldCheck, label: 'Vault' },
   { view: 'trash', icon: Trash2, label: 'Trash' },
   { view: 'settings', icon: Settings, label: 'Settings' },
 ]

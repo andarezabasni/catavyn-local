@@ -7,13 +7,18 @@ mod reminders;
 mod repo;
 mod state;
 mod storage;
+mod vault;
+mod vault_commands;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_vault;
 
 use tauri::Manager;
 
 use state::AppState;
+use vault::session::VaultSession;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,6 +49,7 @@ pub fn run() {
                 log::warn!("failed to restore data directory: {err}");
             }
             app.manage(state);
+            app.manage(VaultSession::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -87,6 +93,17 @@ pub fn run() {
             commands::get_reminders_enabled,
             commands::set_reminders_enabled,
             commands::poll_due_reminders,
+            vault_commands::vault_status,
+            vault_commands::vault_create,
+            vault_commands::vault_unlock,
+            vault_commands::vault_lock,
+            vault_commands::vault_list_items,
+            vault_commands::vault_get_item,
+            vault_commands::vault_create_item,
+            vault_commands::vault_update_item,
+            vault_commands::vault_delete_item,
+            vault_commands::vault_change_master_credential,
+            vault_commands::vault_generate_totp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

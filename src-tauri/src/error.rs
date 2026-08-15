@@ -16,6 +16,9 @@ pub enum AppError {
     #[error("no data directory has been selected yet")]
     NoDataDirectory,
 
+    #[error("the Vault is locked")]
+    VaultLocked,
+
     #[error("invalid data directory: {0}")]
     InvalidDataDirectory(String),
 

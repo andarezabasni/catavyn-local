@@ -34,3 +34,12 @@ thiserror = "2"
 # Decode images to read dimensions and generate thumbnails. Default features
 # cover PNG/JPEG/WebP/GIF/BMP — the formats we support in this phase.
 image = "0.25"
+
+# --- Vault (security-critical) -------------------------------------------
+# RustCrypto stack for the encrypted Vault. Versions chosen for compatibility
+# with the current tree (rustc 1.96.1); see docs/VAULT_SECURITY_SPEC.md.
+argon2 = "0.5"                       # Argon2id key derivation (KEK)
+chacha20poly1305 = "0.10"           # XChaCha20-Poly1305 AEAD
+zeroize = { version = "1", features = ["derive"] }  # zeroize key material
+getrandom = "0.2"                    # OS CSPRNG for salt/nonce/DEK
+totp-rs = "5"                        # TOTP generation (no manual crypto)

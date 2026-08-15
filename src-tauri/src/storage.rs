@@ -142,6 +142,9 @@ pub fn migrate_data_dir(src: &Path, dst: &Path, allow_existing: bool) -> AppResu
 
     // Verify the destination database before the caller commits the switch.
     verify_db(dst)?;
+    // Structurally verify a copied Vault (never decrypts, never needs the
+    // master credential) — spec §19.
+    crate::vault::verify_structure(dst)?;
     Ok(())
 }
 

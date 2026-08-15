@@ -11,6 +11,7 @@ import LocalTagsPage from './pages/LocalTagsPage'
 import LocalPinnedPage from './pages/LocalPinnedPage'
 import LocalTrashPage from './pages/LocalTrashPage'
 import LocalSettingsPage from './pages/LocalSettingsPage'
+import LocalVaultPage from './pages/LocalVaultPage'
 
 // First-run screen: pick where Catavyn stores data. Reuses the design system.
 function StorageSetup({ onReady }: { onReady: () => void }) {
@@ -87,6 +88,7 @@ function Shell({ status, onStatusChange }: { status: StorageStatus; onStatusChan
       )}
       {view === 'tags' && <LocalTagsPage onTagClick={openTag} />}
       {view === 'pinned' && <LocalPinnedPage onOpenNote={openNote} />}
+      {view === 'vault' && <LocalVaultPage />}
       {view === 'trash' && <LocalTrashPage />}
       {view === 'settings' && <LocalSettingsPage status={status} onStatusChange={onStatusChange} />}
     </LocalLayout>

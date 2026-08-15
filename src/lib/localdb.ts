@@ -80,6 +80,31 @@ export interface DueReminder {
   due_time: string
 }
 
+export interface VaultStatus {
+  exists: boolean
+  unlocked: boolean
+}
+
+export interface VaultItemSummary {
+  item_id: string
+  item_type: string
+  created_at: string
+  updated_at: string
+}
+
+export interface VaultItem {
+  item_id: string
+  item_type: string
+  created_at: string
+  updated_at: string
+  payload: Record<string, unknown>
+}
+
+export interface GeneratedTotp {
+  code: string
+  seconds_remaining: number
+}
+
 export interface StorageUsage {
   database_bytes: number
   images_bytes: number
@@ -229,4 +254,22 @@ export const localdb = {
   // the Windows timezone lives in the frontend, never in the database.
   pollDueReminders: (nowLocal: string) =>
     invoke<DueReminder[]>('poll_due_reminders', { nowLocal }),
+
+  // vault — keys never cross this boundary; only status, item metadata, and
+  // the specific decrypted fields the UI requests are returned.
+  vaultStatus: () => invoke<VaultStatus>('vault_status'),
+  vaultCreate: (credential: string) => invoke<void>('vault_create', { credential }),
+  vaultUnlock: (credential: string) => invoke<void>('vault_unlock', { credential }),
+  vaultLock: () => invoke<void>('vault_lock'),
+  vaultListItems: () => invoke<VaultItemSummary[]>('vault_list_items'),
+  vaultGetItem: (itemId: string) => invoke<VaultItem | null>('vault_get_item', { itemId }),
+  vaultCreateItem: (itemType: string, payload: Record<string, unknown>) =>
+    invoke<string>('vault_create_item', { input: { item_type: itemType, payload } }),
+  vaultUpdateItem: (itemId: string, payload: Record<string, unknown>) =>
+    invoke<void>('vault_update_item', { itemId, payload }),
+  vaultDeleteItem: (itemId: string) => invoke<void>('vault_delete_item', { itemId }),
+  vaultChangeMasterCredential: (oldCredential: string, newCredential: string) =>
+    invoke<void>('vault_change_master_credential', { oldCredential, newCredential }),
+  vaultGenerateTotp: (itemId: string) =>
+    invoke<GeneratedTotp>('vault_generate_totp', { itemId }),
 }

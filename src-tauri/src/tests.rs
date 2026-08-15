@@ -760,3 +760,24 @@ mod reminder_tests {
         assert_eq!(due_reminders(&tasks, now, &HashSet::new(), 600).len(), 1);
     }
 }
+
+// --- Vault: Argon2id benchmark (informational; not an assertion) ---------
+// Run with: cargo test vault_argon2_benchmark -- --nocapture --ignored
+#[test]
+#[ignore]
+fn vault_argon2_benchmark() {
+    use crate::vault::kdf::{derive_kek, KdfParams};
+    let salt = [0x42u8; 16];
+    let cred = b"123456789012";
+    for params in [
+        KdfParams { m_kib: 131_072, t: 3, p: 1 },
+        KdfParams { m_kib: 196_608, t: 3, p: 1 },
+        KdfParams { m_kib: 131_072, t: 4, p: 1 },
+    ] {
+        let start = std::time::Instant::now();
+        let _ = derive_kek(cred, &salt, params).unwrap();
+        let ms = start.elapsed().as_millis();
+        println!("argon2id m={}KiB t={} p={} -> {} ms", params.m_kib, params.t, params.p, ms);
+    }
+}
+
