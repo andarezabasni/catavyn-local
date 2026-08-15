@@ -43,15 +43,19 @@ export default function LocalNotesPage({
   initialTagFilter?: string | null
   onConsumed?: () => void
 } = {}) {
+  const [searchQuery, setSearchQuery] = useState('')
+  // Search is resolved by SQLite FTS5 in the backend — the notes list is
+  // fetched already-filtered, so we never load the whole collection to filter
+  // text client-side. Category/tag are lightweight metadata filters applied on
+  // top of the (already small) result set.
   const { notes, loading, createNote, updateNote, deleteNote, restoreNote, togglePin } =
-    useNotes({ rootOnly: true })
+    useNotes({ rootOnly: true, search: searchQuery })
   const { categories } = useCategories()
   const { tags, noteTagsMap, createTag, attachTag, detachTag } = useTags()
 
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [tagFilter, setTagFilter] = useState<string | null>(initialTagFilter ?? null)
-  const [searchQuery, setSearchQuery] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editorStack, setEditorStack] = useState<Note[]>([])
@@ -91,19 +95,14 @@ export default function LocalNotesPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openNoteId, loading, notes, editorOpen])
 
+  // Category/tag are metadata filters applied to the FTS result set. Note text
+  // matching itself is done by the backend (SQLite FTS5), not here.
   const filteredNotes = notes
     .filter(n => {
       if (categoryFilter && n.category_id !== categoryFilter) return false
       if (tagFilter) {
         const nt = noteTagsMap[n.id] ?? []
         if (!nt.some(t => t.id === tagFilter)) return false
-      }
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase()
-        const inTitle = n.title.toLowerCase().includes(q)
-        const inContent = n.content.toLowerCase().includes(q)
-        const inTags = (noteTagsMap[n.id] ?? []).some(t => t.name.toLowerCase().includes(q))
-        if (!inTitle && !inContent && !inTags) return false
       }
       return true
     })
@@ -420,9 +419,9 @@ export default function LocalNotesPage({
           ) : filteredNotes.length === 0 ? (
             <EmptyState
               icon={FileText}
-              title={categoryFilter || tagFilter ? 'No notes match this filter.' : 'No notes yet.'}
-              description={categoryFilter || tagFilter ? 'Try a different filter or search term.' : 'Start capturing your thoughts and ideas.'}
-              action={!categoryFilter && !tagFilter ? { label: 'Create your first note', onClick: openNew } : undefined}
+              title={searchQuery ? 'No notes match your search.' : categoryFilter || tagFilter ? 'No notes match this filter.' : 'No notes yet.'}
+              description={searchQuery || categoryFilter || tagFilter ? 'Try a different search term or filter.' : 'Start capturing your thoughts and ideas.'}
+              action={!searchQuery && !categoryFilter && !tagFilter ? { label: 'Create your first note', onClick: openNew } : undefined}
             />
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

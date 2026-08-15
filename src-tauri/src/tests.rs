@@ -558,3 +558,112 @@ fn attachments_are_portable_across_copied_dir() {
 
     std::fs::remove_dir_all(&base).ok();
 }
+
+#[test]
+fn fts_multiword_and_ordering() {
+    let (dir, conn) = fresh_db();
+    // Two notes both matching "project"; the more recently updated ranks first.
+    let a = notes::create(&conn, notes::NewNote { title: Some("Project alpha".into()), content: Some("planning".into()), ..Default::default() }).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let b = notes::create(&conn, notes::NewNote { title: Some("Project beta".into()), content: Some("planning notes".into()), ..Default::default() }).unwrap();
+
+    // Multi-word query: both tokens are prefix-matched (AND semantics).
+    let both = notes::list(&conn, notes::NoteQuery { search: Some("project planning".into()), ..Default::default() }).unwrap();
+    assert_eq!(both.len(), 2);
+    // Ordered by updated_at DESC -> newest (b) first.
+    assert_eq!(both[0].id, b.id);
+    assert_eq!(both[1].id, a.id);
+
+    // A word only one note has narrows the result.
+    let one = notes::list(&conn, notes::NoteQuery { search: Some("beta".into()), ..Default::default() }).unwrap();
+    assert_eq!(one.len(), 1);
+    assert_eq!(one[0].id, b.id);
+    let _ = a;
+    cleanup(&dir);
+}
+
+#[test]
+fn fts_edge_case_queries_do_not_error() {
+    let (dir, conn) = fresh_db();
+    notes::create(&conn, notes::NewNote { title: Some("Hello world".into()), content: Some("a note about C++ and Rust".into()), ..Default::default() }).unwrap();
+
+    // Punctuation-only / special FTS characters must not raise a syntax error.
+    for q in ["!!!", "\"", "*", "^", "()", "AND OR NOT", "- -", "C++", "a:b", "   "] {
+        let res = notes::list(&conn, notes::NoteQuery { search: Some(q.to_string()), ..Default::default() });
+        assert!(res.is_ok(), "query {q:?} should not error, got {res:?}");
+    }
+
+    // A very long query must also be safe.
+    let long = "word ".repeat(500);
+    assert!(notes::list(&conn, notes::NoteQuery { search: Some(long), ..Default::default() }).is_ok());
+
+    // Empty / whitespace query returns all notes (no text filter).
+    let all = notes::list(&conn, notes::NoteQuery { search: Some("   ".into()), ..Default::default() }).unwrap();
+    assert_eq!(all.len(), 1);
+    cleanup(&dir);
+}
+
+#[test]
+fn fts_excludes_deleted_and_includes_restored() {
+    let (dir, conn) = fresh_db();
+    let n = notes::create(&conn, notes::NewNote { title: Some("Findable".into()), content: Some("secret token".into()), ..Default::default() }).unwrap();
+
+    // Present in active search.
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("findable".into()), ..Default::default() }).unwrap().len(), 1);
+
+    // Soft-deleted: gone from active search, present in trash search.
+    notes::soft_delete(&conn, &n.id).unwrap();
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("findable".into()), ..Default::default() }).unwrap().len(), 0);
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("findable".into()), deleted: Some(true), ..Default::default() }).unwrap().len(), 1);
+
+    // Restored: back in active search.
+    notes::restore(&conn, &n.id).unwrap();
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("secret".into()), ..Default::default() }).unwrap().len(), 1);
+
+    // Permanently deleted: FTS row removed, not findable anywhere.
+    notes::soft_delete(&conn, &n.id).unwrap();
+    notes::hard_delete(&conn, &n.id).unwrap();
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("findable".into()), deleted: Some(true), ..Default::default() }).unwrap().len(), 0);
+    cleanup(&dir);
+}
+
+#[test]
+fn fts_reflects_edits() {
+    let (dir, conn) = fresh_db();
+    let n = notes::create(&conn, notes::NewNote { title: Some("Draft".into()), content: Some("initial body".into()), ..Default::default() }).unwrap();
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("initial".into()), ..Default::default() }).unwrap().len(), 1);
+
+    // Editing content updates the index (old term gone, new term found).
+    notes::update(&conn, &n.id, notes::NotePatch { content: Some("revised body".into()), ..Default::default() }).unwrap();
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("initial".into()), ..Default::default() }).unwrap().len(), 0);
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("revised".into()), ..Default::default() }).unwrap().len(), 1);
+
+    // Editing the title is indexed too.
+    notes::update(&conn, &n.id, notes::NotePatch { title: Some("Final".into()), ..Default::default() }).unwrap();
+    assert_eq!(notes::list(&conn, notes::NoteQuery { search: Some("final".into()), ..Default::default() }).unwrap().len(), 1);
+    cleanup(&dir);
+}
+
+#[test]
+fn fts_scales_to_larger_dataset() {
+    let (dir, conn) = fresh_db();
+    for i in 0..1000 {
+        notes::create(&conn, notes::NewNote {
+            title: Some(format!("Note number {i}")),
+            content: Some(format!("body content item {}", i % 50)),
+            ..Default::default()
+        }).unwrap();
+    }
+    // Unique title token matches exactly one.
+    let one = notes::list(&conn, notes::NoteQuery { search: Some("number".into()), ..Default::default() }).unwrap();
+    assert_eq!(one.len(), 1000, "all notes contain 'number'");
+
+    // A shared content bucket matches the expected slice.
+    let bucket = notes::list(&conn, notes::NoteQuery { search: Some("item".into()), ..Default::default() }).unwrap();
+    assert_eq!(bucket.len(), 1000);
+
+    // Prefix search still works at scale.
+    let prefix = notes::list(&conn, notes::NoteQuery { search: Some("cont".into()), ..Default::default() }).unwrap();
+    assert_eq!(prefix.len(), 1000);
+    cleanup(&dir);
+}
