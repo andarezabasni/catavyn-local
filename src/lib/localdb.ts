@@ -1,0 +1,177 @@
+import { invoke } from '@tauri-apps/api/core'
+
+// Thin typed wrapper around the Rust/Tauri command layer. This is the ONLY
+// place the renderer talks to the local database — no raw SQL lives in the
+// frontend. Field shapes mirror the existing Catavyn types so UI components
+// can be reused with minimal changes.
+
+export interface LocalNote {
+  id: string
+  category_id: string | null
+  parent_id: string | null
+  title: string
+  content: string
+  is_pinned: boolean
+  pin_hash: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export interface LocalCategory {
+  id: string
+  name: string
+  icon: string
+  color: string
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalTag {
+  id: string
+  name: string
+  color: string
+  created_at: string
+}
+
+export interface NoteTagLink {
+  note_id: string
+  tag_id: string
+}
+
+export interface LocalTask {
+  id: string
+  title: string
+  description: string
+  due_date: string | null
+  due_time: string | null
+  is_completed: boolean
+  priority: 'low' | 'medium' | 'high'
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+export interface StorageStatus {
+  configured: boolean
+  data_dir: string | null
+}
+
+export interface StorageUsage {
+  database_bytes: number
+  attachments_bytes: number
+  backups_bytes: number
+  total_bytes: number
+}
+
+// --- input shapes ---------------------------------------------------------
+
+export interface NewNoteInput {
+  title?: string
+  content?: string
+  category_id?: string | null
+  parent_id?: string | null
+}
+
+// Nested-optional fields: omit to leave unchanged, pass null to clear.
+export interface NotePatch {
+  title?: string
+  content?: string
+  category_id?: string | null
+  is_pinned?: boolean
+  pin_hash?: string | null
+  parent_id?: string | null
+}
+
+export interface NoteQuery {
+  deleted?: boolean
+  parent_id?: string
+  root_only?: boolean
+  search?: string
+}
+
+export interface NewCategoryInput {
+  name: string
+  icon?: string
+  color?: string
+  position?: number
+}
+
+export interface CategoryPatch {
+  name?: string
+  icon?: string
+  color?: string
+  position?: number
+}
+
+export interface NewTagInput {
+  name: string
+  color?: string
+}
+
+export interface NewTaskInput {
+  title: string
+  description?: string
+  due_date?: string | null
+  due_time?: string | null
+  priority?: 'low' | 'medium' | 'high'
+  position?: number
+}
+
+export interface TaskPatch {
+  title?: string
+  description?: string
+  due_date?: string | null
+  due_time?: string | null
+  is_completed?: boolean
+  priority?: 'low' | 'medium' | 'high'
+  position?: number
+}
+
+export const localdb = {
+  // storage
+  getStorageStatus: () => invoke<StorageStatus>('get_storage_status'),
+  chooseDataDir: () => invoke<string | null>('choose_data_dir'),
+  openDataDir: (path: string) => invoke<StorageStatus>('open_data_dir', { path }),
+  openDataDirInExplorer: () => invoke<void>('open_data_dir_in_explorer'),
+  getStorageUsage: () => invoke<StorageUsage>('get_storage_usage'),
+  migrateStorage: () => invoke<string | null>('migrate_storage'),
+  deleteAllData: (confirmPath: string) =>
+    invoke<StorageStatus>('delete_all_data', { confirmPath }),
+
+  // notes
+  listNotes: (query: NoteQuery = {}) => invoke<LocalNote[]>('list_notes', { query }),
+  getNote: (id: string) => invoke<LocalNote | null>('get_note', { id }),
+  createNote: (input: NewNoteInput = {}) => invoke<LocalNote>('create_note', { input }),
+  updateNote: (id: string, patch: NotePatch) =>
+    invoke<LocalNote | null>('update_note', { id, patch }),
+  deleteNote: (id: string) => invoke<void>('delete_note', { id }),
+  restoreNote: (id: string) => invoke<void>('restore_note', { id }),
+  permanentlyDeleteNote: (id: string) => invoke<void>('permanently_delete_note', { id }),
+  emptyTrash: () => invoke<number>('empty_trash'),
+
+  // categories
+  listCategories: () => invoke<LocalCategory[]>('list_categories'),
+  createCategory: (input: NewCategoryInput) => invoke<LocalCategory>('create_category', { input }),
+  updateCategory: (id: string, patch: CategoryPatch) =>
+    invoke<LocalCategory | null>('update_category', { id, patch }),
+  deleteCategory: (id: string) => invoke<void>('delete_category', { id }),
+
+  // tags
+  listTags: () => invoke<LocalTag[]>('list_tags'),
+  listNoteTagLinks: () => invoke<NoteTagLink[]>('list_note_tag_links'),
+  createTag: (input: NewTagInput) => invoke<LocalTag>('create_tag', { input }),
+  deleteTag: (id: string) => invoke<void>('delete_tag', { id }),
+  attachTag: (noteId: string, tagId: string) =>
+    invoke<void>('attach_tag', { noteId, tagId }),
+  detachTag: (noteId: string, tagId: string) =>
+    invoke<void>('detach_tag', { noteId, tagId }),
+
+  // tasks
+  listTasks: (dueDate?: string) => invoke<LocalTask[]>('list_tasks', { dueDate: dueDate ?? null }),
+  createTask: (input: NewTaskInput) => invoke<LocalTask>('create_task', { input }),
+  updateTask: (id: string, patch: TaskPatch) =>
+    invoke<LocalTask | null>('update_task', { id, patch }),
+  deleteTask: (id: string) => invoke<void>('delete_task', { id }),
+}

@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+/* Class-based dark mode — .dark on <html> activates dark: utilities */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Backgrounds */
+  --color-bg-page:       #E8E0D0;
+  --color-bg-card:       #F5F0E8;
+  --color-bg-sidebar:    #D9D0C0;
+  --color-bg-task-panel: #6B7B6A;
+
+  /* Text */
+  --color-text-primary:   #2C2C2C;
+  --color-text-secondary: #6B6560;
+  --color-text-muted:     #9B9590;
+
+  /* Accents */
+  --color-accent-gold:  #C4A84D;
+  --color-accent-green: #6B8B6A;
+
+  /* Tags */
+  --color-tag-campus:   #5B8B5A;
+  --color-tag-work:     #8B8B6A;
+  --color-tag-personal: #C4844D;
+  --color-tag-ideas:    #C4A84D;
+
+  /* Priority */
+  --color-priority-high: #E8C080;
+  --color-priority-med:  #C8E0C8;
+  --color-priority-low:  #E0D8D0;
+
+  /* Border */
+  --color-border: #D0C8B8;
+
+  /* Typography */
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-sans:    'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* Base font size */
+  --text-base: 14px;
+
+  /* Animations */
+  --animate-fade-up: fade-up 0.18s ease-out both;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Dark mode — token overrides, warm dark palette */
+.dark {
+  --color-bg-page:        #1C1917;
+  --color-bg-card:        #242220;
+  --color-bg-sidebar:     #161412;
+  --color-bg-task-panel:  #2D3D2D;
+  --color-text-primary:   #E8E0D0;
+  --color-text-secondary: #B5AFA8;
+  --color-text-muted:     #6B665F;
+  --color-border:         #3A3530;
+  --color-priority-high:  #4A3A10;
+  --color-priority-med:   #1A3A1A;
+  --color-priority-low:   #2E2A26;
+  color-scheme: dark;
+}
+
+/* Base resets */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  background-color: var(--color-bg-page);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Desktop-native feel: no accidental text selection on UI chrome */
+button, nav, aside, label {
+  user-select: none;
+}
+
+/* Always allow selection inside content/input areas */
+input, textarea, [contenteditable] {
+  user-select: text;
+}
+
+/* Tiptap rich text editor */
+.tiptap-editor .ProseMirror {
+  outline: none;
+  min-height: 50vh;
+}
+
+.tiptap-editor .ProseMirror p {
+  margin: 0 0 0.5em;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+.tiptap-editor .ProseMirror h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 1em 0 0.4em;
+  font-family: var(--font-display);
+}
+
+.tiptap-editor .ProseMirror h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0.9em 0 0.35em;
+}
+
+.tiptap-editor .ProseMirror strong {
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.tiptap-editor .ProseMirror ul,
+.tiptap-editor .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+.tiptap-editor .ProseMirror ul { list-style-type: disc; }
+.tiptap-editor .ProseMirror ol { list-style-type: decimal; }
+.tiptap-editor .ProseMirror li { margin: 0.15em 0; }
+
+/* Task list / checklist */
+.tiptap-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.2em;
+  user-select: none;
+}
+
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  accent-color: var(--color-accent-gold);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+/* Placeholder */
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: "Start writing\2026";
+  color: var(--color-text-muted);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}

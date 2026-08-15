@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /reset-password
+
+Sitemap: https://catavyn.fun/sitemap.xml
