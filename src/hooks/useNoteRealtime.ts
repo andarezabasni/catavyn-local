@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useContext, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
+import { AuthContext } from '../context/AuthContext'
 
 export interface RemoteUpdate {
   title: string
@@ -12,7 +12,12 @@ export function useNoteRealtime(
   noteId: string | null,
   onRemoteUpdate: (update: RemoteUpdate) => void
 ) {
-  const { user } = useAuth()
+  // Read the auth context directly instead of `useAuth()` so this hook is safe
+  // in the local-first desktop build, which has no AuthProvider. When there is
+  // no provider (and thus no noteId passed), the effect below is a no-op and no
+  // Supabase subscription is ever created.
+  const auth = useContext(AuthContext)
+  const user = auth?.user ?? null
 
   useEffect(() => {
     if (!noteId) return

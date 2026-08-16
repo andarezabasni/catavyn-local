@@ -71,9 +71,81 @@ pub fn vault_lock(session: State<VaultSession>) -> AppResult<()> {
     Ok(())
 }
 
+/// Register UI activity (e.g. typing in an item form) to reset the inactivity
+/// auto-lock timer. Returns whether the Vault is still unlocked. No secret is
+/// read or returned.
 #[tauri::command]
-pub fn vault_list_items(session: State<VaultSession>) -> AppResult<Vec<store::VaultItemSummary>> {
-    session.with_unlocked(|v| store::list(&v.conn))
+pub fn vault_keepalive(session: State<VaultSession>) -> AppResult<bool> {
+    Ok(session.touch_if_unlocked())
+}
+
+#[tauri::command]
+pub fn vault_list_items(session: State<VaultSession>) -> AppResult<Vec<VaultItemListing>> {
+    session.with_unlocked(|v| {
+        let summaries = store::list(&v.conn)?;
+        let mut out = Vec::with_capacity(summaries.len());
+        for s in summaries {
+            // Derive a non-secret display label by decrypting the item in memory
+            // (the Vault is unlocked). Labels are never written to disk in
+            // plaintext — they're computed on demand from the encrypted payload.
+            let label = match store::get(&v.conn, &s.item_id)? {
+                Some(row) => {
+                    let aad = vault::crypto::item_aad(&row.item_type, &row.item_id);
+                    match vault::crypto::open(v.dek(), &aad, &row.encrypted_payload) {
+                        Ok(plain) => serde_json::from_slice::<serde_json::Value>(&plain)
+                            .ok()
+                            .map(|p| label_for(&s.item_type, &p))
+                            .unwrap_or_default(),
+                        Err(_) => String::new(),
+                    }
+                }
+                None => String::new(),
+            };
+            out.push(VaultItemListing {
+                item_id: s.item_id,
+                item_type: s.item_type,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+                label,
+            });
+        }
+        Ok(out)
+    })
+}
+
+/// A listing row with a derived, non-secret display label (no secrets).
+#[derive(Debug, Serialize)]
+pub struct VaultItemListing {
+    pub item_id: String,
+    pub item_type: String,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Short human label shown in the list (e.g. account name / issuer / title).
+    /// Derived from non-secret fields only; never a password/secret/key/code.
+    pub label: String,
+}
+
+/// Pick a sensible non-secret label per item type. Never returns password,
+/// TOTP secret, recovery codes, or API key values.
+fn label_for(item_type: &str, payload: &serde_json::Value) -> String {
+    let get = |k: &str| payload.get(k).and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty());
+    let label = match item_type {
+        "account" => get("name").or_else(|| get("username")).or_else(|| get("website")),
+        "totp" => {
+            // "issuer (account)" when both present.
+            match (get("issuer"), get("account")) {
+                (Some(i), Some(a)) => return format!("{i} ({a})"),
+                (Some(i), None) => Some(i),
+                (None, Some(a)) => Some(a),
+                (None, None) => None,
+            }
+        }
+        "apikey" => get("name").or_else(|| get("endpoint")),
+        "note" => get("title"),
+        "recovery" => get("label").or_else(|| get("name")),
+        _ => None,
+    };
+    label.map(str::to_string).unwrap_or_default()
 }
 
 // --- item payloads --------------------------------------------------------

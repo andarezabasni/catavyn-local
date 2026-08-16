@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Lock, LockOpen, Plus, Copy, Eye, EyeOff, Trash2, KeyRound, ShieldCheck,
   FileKey, ListChecks, StickyNote,
@@ -6,6 +7,7 @@ import {
 import { localdb, type VaultItemSummary, type VaultItem, type GeneratedTotp } from '../../lib/localdb'
 import { toast } from '../../lib/toast'
 import { useVault } from '../hooks/useVault'
+import SearchBar from '../../components/ui/SearchBar'
 
 // Vault section. Reuses the existing Catavyn design language (cards, gold
 // accents, modals). Secrets are hidden by default and only revealed / copied on
@@ -51,8 +53,9 @@ function CredentialGate({
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center overflow-y-auto p-6">
-      <div className="max-w-sm w-full bg-bg-card border border-border rounded-2xl p-8 text-center animate-fade-up my-auto">
+    <div className="fixed inset-0 overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center p-6">
+        <div className="max-w-sm w-full bg-bg-card border border-border rounded-2xl p-8 text-center animate-fade-up">
         <div className="flex justify-center mb-4">
           <div className="w-14 h-14 rounded-2xl bg-accent-gold/15 flex items-center justify-center">
             <Lock size={26} className="text-accent-gold" />
@@ -97,6 +100,7 @@ function CredentialGate({
         >
           {busy ? 'Working…' : mode === 'create' ? 'Create Vault' : 'Unlock'}
         </button>
+        </div>
       </div>
     </div>
   )
@@ -108,12 +112,16 @@ export default function LocalVaultPage() {
   const [activeType, setActiveType] = useState<ItemType>('account')
   const [editorOpen, setEditorOpen] = useState(false)
   const [openItem, setOpenItem] = useState<VaultItem | null>(null)
+  const [search, setSearch] = useState('')
 
   if (status === null) return <div className="min-h-screen bg-bg-page" />
   if (!status.exists) return <CredentialGate mode="create" onSubmit={create} />
   if (!status.unlocked) return <CredentialGate mode="unlock" onSubmit={unlock} />
 
-  const shown = items.filter(i => i.item_type === activeType)
+  const q = search.trim().toLowerCase()
+  const shown = items
+    .filter(i => i.item_type === activeType)
+    .filter(i => !q || i.label.toLowerCase().includes(q))
 
   async function openDetail(summary: VaultItemSummary) {
     const item = await localdb.vaultGetItem(summary.item_id)
@@ -150,7 +158,7 @@ export default function LocalVaultPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-6 flex-wrap">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         {ITEM_TYPES.map(({ type, label, icon: Icon }) => (
           <button
             key={type}
@@ -167,10 +175,15 @@ export default function LocalVaultPage() {
         ))}
       </div>
 
+      {/* Search within the active category by label (non-secret). */}
+      <div className="mb-6">
+        <SearchBar placeholder="Search by name…" onSearch={setSearch} />
+      </div>
+
       {shown.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-12 text-center">
           <Lock size={22} className="text-text-muted mx-auto mb-3 opacity-40" />
-          <p className="text-text-muted text-sm">No items here yet.</p>
+          <p className="text-text-muted text-sm">{q ? 'No items match your search.' : 'No items here yet.'}</p>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -182,7 +195,7 @@ export default function LocalVaultPage() {
             >
               <Lock size={13} className="text-text-muted shrink-0" />
               <span className="text-text-primary text-sm font-medium flex-1 min-w-0 truncate">
-                {item.item_id.slice(0, 8)}…
+                {item.label || 'Untitled item'}
               </span>
               <span className="text-text-muted text-xs shrink-0">
                 {new Date(item.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -223,7 +236,10 @@ const FIELDS: Record<ItemType, { key: string; label: string; secret?: boolean; t
     { key: 'digits', label: 'Digits' },
     { key: 'period', label: 'Period (s)' },
   ],
-  recovery: [{ key: 'codes_text', label: 'Recovery codes (one per line)', secret: true, textarea: true }],
+  recovery: [
+    { key: 'name', label: 'Name' },
+    { key: 'codes_text', label: 'Recovery codes (one per line)', secret: true, textarea: true },
+  ],
   apikey: [
     { key: 'name', label: 'Name' },
     { key: 'key', label: 'API key', secret: true },
@@ -304,7 +320,7 @@ function VaultItemEditor({
   function buildPayload(): Record<string, unknown> {
     if (type === 'recovery') {
       const codes = (values.codes_text ?? '').split('\n').map(s => s.trim()).filter(Boolean)
-      return { codes }
+      return { name: values.name ?? '', codes }
     }
     const p: Record<string, unknown> = {}
     for (const f of fields) {
@@ -324,15 +340,20 @@ function VaultItemEditor({
     else await onCreate(payload)
   }
 
-  return (
+  return createPortal(
     <>
       <div className="fixed inset-0 z-50 bg-text-primary/20 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto p-4 pointer-events-none">
-        <div className="bg-bg-card rounded-2xl border border-border shadow-xl w-full max-w-md pointer-events-auto animate-fade-up p-5 my-auto">
-          <h2 className="text-text-primary font-semibold text-base mb-4">
-            {isEdit ? 'Edit item' : 'New item'}
-          </h2>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-bg-card rounded-2xl border border-border shadow-xl w-full max-w-md animate-fade-up flex flex-col max-h-[calc(100vh-2rem)]">
+          {/* Fixed header */}
+          <div className="px-5 pt-5 pb-3 border-b border-border shrink-0">
+            <h2 className="text-text-primary font-semibold text-base">
+              {isEdit ? 'Edit item' : 'New item'}
+            </h2>
+          </div>
 
+          {/* Scrollable content */}
+          <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
           {type === 'totp' && isEdit && totp && (
             <div className="mb-4 rounded-lg bg-bg-page border border-border p-3 flex items-center justify-between">
               <div>
@@ -395,8 +416,10 @@ function VaultItemEditor({
               </div>
             ))}
           </div>
+          </div>
 
-          <div className="flex items-center justify-between mt-5">
+          {/* Fixed footer / actions */}
+          <div className="flex items-center justify-between px-5 py-4 border-t border-border shrink-0">
             {isEdit ? (
               <button
                 type="button"
@@ -426,6 +449,7 @@ function VaultItemEditor({
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }

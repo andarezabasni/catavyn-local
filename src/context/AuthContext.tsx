@@ -15,6 +15,9 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+// Exported so local-first hooks can read it optionally (no provider = null)
+// without throwing the way `useAuth()` does.
+export { AuthContext }
 
 function getAuthErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) return error.message

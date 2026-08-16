@@ -90,6 +90,26 @@ impl VaultSession {
         *guard = None;
     }
 
+    /// Refresh the inactivity timer if currently unlocked. Returns whether the
+    /// Vault is (still) unlocked. Used to count real UI activity (typing) as
+    /// activity without exposing any secret. Auto-lock still applies once the
+    /// window has genuinely been idle for the timeout.
+    pub fn touch_if_unlocked(&self) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let expired = guard.as_ref().map(|v| v.expired(self.timeout)).unwrap_or(false);
+        if expired {
+            *guard = None;
+            return false;
+        }
+        match guard.as_mut() {
+            Some(v) => {
+                v.touch();
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Run `f` with the unlocked Vault, refreshing the activity timer. Fails
     /// with a locked error if not unlocked or if the session has expired.
     pub fn with_unlocked<T>(

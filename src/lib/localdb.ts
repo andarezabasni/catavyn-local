@@ -90,6 +90,9 @@ export interface VaultItemSummary {
   item_type: string
   created_at: string
   updated_at: string
+  // Non-secret display label derived from the item (e.g. account name, TOTP
+  // issuer, note title). Empty string when the item has no obvious label.
+  label: string
 }
 
 export interface VaultItem {
@@ -273,6 +276,7 @@ export const localdb = {
   vaultCreate: (credential: string) => invoke<void>('vault_create', { credential }),
   vaultUnlock: (credential: string) => invoke<void>('vault_unlock', { credential }),
   vaultLock: () => invoke<void>('vault_lock'),
+  vaultKeepalive: () => invoke<boolean>('vault_keepalive'),
   vaultListItems: () => invoke<VaultItemSummary[]>('vault_list_items'),
   vaultGetItem: (itemId: string) => invoke<VaultItem | null>('vault_get_item', { itemId }),
   vaultCreateItem: (itemType: string, payload: Record<string, unknown>) =>
