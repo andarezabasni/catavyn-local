@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
+use crate::repo::settings;
 use crate::state::AppState;
 use crate::vault::{self, kdf::KdfParams, meta, session::VaultSession, store, totp};
 
@@ -77,6 +78,28 @@ pub fn vault_lock(session: State<VaultSession>) -> AppResult<()> {
 #[tauri::command]
 pub fn vault_keepalive(session: State<VaultSession>) -> AppResult<bool> {
     Ok(session.touch_if_unlocked())
+}
+
+const AUTO_LOCK_SETTING_KEY: &str = "vault_auto_lock_secs";
+
+/// Get the configured Vault auto-lock timeout in seconds.
+#[tauri::command]
+pub fn vault_get_auto_lock(session: State<VaultSession>) -> AppResult<u64> {
+    Ok(session.timeout_secs())
+}
+
+/// Set the Vault auto-lock timeout (seconds), persisting it to the settings
+/// table and applying it to the live session immediately. Floored at 30s.
+#[tauri::command]
+pub fn vault_set_auto_lock(
+    state: State<AppState>,
+    session: State<VaultSession>,
+    secs: u64,
+) -> AppResult<()> {
+    let secs = secs.max(30);
+    state.with_tx(|tx| settings::set(tx, AUTO_LOCK_SETTING_KEY, &secs.to_string()))?;
+    session.set_timeout_secs(secs);
+    Ok(())
 }
 
 #[tauri::command]

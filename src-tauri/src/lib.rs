@@ -52,8 +52,18 @@ pub fn run() {
             if let Err(err) = state.restore() {
                 log::warn!("failed to restore data directory: {err}");
             }
+            let vault_session = VaultSession::new();
+            // Load the persisted Vault auto-lock timeout, if a data dir is open.
+            let saved_timeout = state
+                .with_conn(|conn| crate::repo::settings::get(conn, "vault_auto_lock_secs"))
+                .ok()
+                .flatten()
+                .and_then(|s| s.parse::<u64>().ok());
+            if let Some(secs) = saved_timeout {
+                vault_session.set_timeout_secs(secs);
+            }
             app.manage(state);
-            app.manage(VaultSession::new());
+            app.manage(vault_session);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -109,6 +119,8 @@ pub fn run() {
             vault_commands::vault_delete_item,
             vault_commands::vault_change_master_credential,
             vault_commands::vault_generate_totp,
+            vault_commands::vault_get_auto_lock,
+            vault_commands::vault_set_auto_lock,
             backup_commands::create_backup,
             backup_commands::restore_validate,
             backup_commands::restore_cancel,

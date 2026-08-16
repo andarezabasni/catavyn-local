@@ -288,6 +288,8 @@ export const localdb = {
     invoke<void>('vault_change_master_credential', { oldCredential, newCredential }),
   vaultGenerateTotp: (itemId: string) =>
     invoke<GeneratedTotp>('vault_generate_totp', { itemId }),
+  vaultGetAutoLock: () => invoke<number>('vault_get_auto_lock'),
+  vaultSetAutoLock: (secs: number) => invoke<void>('vault_set_auto_lock', { secs }),
 
   // backup & restore
   createBackup: () => invoke<BackupResult | null>('create_backup'),

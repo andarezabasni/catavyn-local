@@ -42,14 +42,17 @@ impl Drop for UnlockedVault {
 /// Thread-safe Vault session state. Lives inside the app's managed state.
 pub struct VaultSession {
     inner: Mutex<Option<UnlockedVault>>,
-    timeout: Duration,
+    /// Inactivity auto-lock timeout in seconds. Configurable by the user
+    /// (persisted in the notes DB settings table); guarded for interior
+    /// mutability so it can change without recreating the session.
+    timeout_secs: Mutex<u64>,
 }
 
 impl Default for VaultSession {
     fn default() -> Self {
         Self {
             inner: Mutex::new(None),
-            timeout: Duration::from_secs(AUTO_LOCK_SECS),
+            timeout_secs: Mutex::new(AUTO_LOCK_SECS),
         }
     }
 }
@@ -57,6 +60,20 @@ impl Default for VaultSession {
 impl VaultSession {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(*self.timeout_secs.lock().unwrap())
+    }
+
+    /// Update the inactivity auto-lock timeout (seconds). Applied immediately to
+    /// the current session.
+    pub fn set_timeout_secs(&self, secs: u64) {
+        *self.timeout_secs.lock().unwrap() = secs.max(30); // floor of 30s
+    }
+
+    pub fn timeout_secs(&self) -> u64 {
+        *self.timeout_secs.lock().unwrap()
     }
 
     /// Store a freshly-unlocked Vault.
@@ -75,7 +92,7 @@ impl VaultSession {
     pub fn is_unlocked(&self) -> bool {
         let mut guard = self.inner.lock().unwrap();
         if let Some(v) = guard.as_ref() {
-            if v.expired(self.timeout) {
+            if v.expired(self.timeout()) {
                 *guard = None; // auto-lock; Drop zeroizes the DEK
                 return false;
             }
@@ -96,7 +113,7 @@ impl VaultSession {
     /// window has genuinely been idle for the timeout.
     pub fn touch_if_unlocked(&self) -> bool {
         let mut guard = self.inner.lock().unwrap();
-        let expired = guard.as_ref().map(|v| v.expired(self.timeout)).unwrap_or(false);
+        let expired = guard.as_ref().map(|v| v.expired(self.timeout())).unwrap_or(false);
         if expired {
             *guard = None;
             return false;
@@ -118,7 +135,7 @@ impl VaultSession {
     ) -> AppResult<T> {
         let mut guard = self.inner.lock().unwrap();
         // Auto-lock check.
-        let expired = guard.as_ref().map(|v| v.expired(self.timeout)).unwrap_or(false);
+        let expired = guard.as_ref().map(|v| v.expired(self.timeout())).unwrap_or(false);
         if expired {
             *guard = None;
         }

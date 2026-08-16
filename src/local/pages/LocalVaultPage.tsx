@@ -2,12 +2,20 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Lock, LockOpen, Plus, Copy, Eye, EyeOff, Trash2, KeyRound, ShieldCheck,
-  FileKey, ListChecks, StickyNote,
+  FileKey, ListChecks, StickyNote, Settings as SettingsIcon,
 } from 'lucide-react'
 import { localdb, type VaultItemSummary, type VaultItem, type GeneratedTotp } from '../../lib/localdb'
 import { toast } from '../../lib/toast'
 import { useVault } from '../hooks/useVault'
 import SearchBar from '../../components/ui/SearchBar'
+
+// Vault auto-lock choices (label + seconds).
+const AUTO_LOCK_OPTIONS = [
+  { label: '1 min', secs: 60 },
+  { label: '5 min', secs: 300 },
+  { label: '15 min', secs: 900 },
+  { label: '30 min', secs: 1800 },
+] as const
 
 // Vault section. Reuses the existing Catavyn design language (cards, gold
 // accents, modals). Secrets are hidden by default and only revealed / copied on
@@ -113,6 +121,12 @@ export default function LocalVaultPage() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [openItem, setOpenItem] = useState<VaultItem | null>(null)
   const [search, setSearch] = useState('')
+  const [autoLock, setAutoLock] = useState<number | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    if (status?.unlocked) void localdb.vaultGetAutoLock().then(setAutoLock)
+  }, [status?.unlocked])
 
   if (status === null) return <div className="min-h-screen bg-bg-page" />
   if (!status.exists) return <CredentialGate mode="create" onSubmit={create} />
@@ -122,6 +136,13 @@ export default function LocalVaultPage() {
   const shown = items
     .filter(i => i.item_type === activeType)
     .filter(i => !q || i.label.toLowerCase().includes(q))
+
+  async function changeAutoLock(secs: number) {
+    await localdb.vaultSetAutoLock(secs)
+    setAutoLock(secs)
+    setSettingsOpen(false)
+    toast.success('Auto-lock updated')
+  }
 
   async function openDetail(summary: VaultItemSummary) {
     const item = await localdb.vaultGetItem(summary.item_id)
@@ -148,6 +169,35 @@ export default function LocalVaultPage() {
             <Plus size={15} />
             New item
           </button>
+          <div className="relative">
+            <button
+              onClick={() => setSettingsOpen(v => !v)}
+              aria-label="Vault settings"
+              className="flex items-center rounded-lg border border-border px-2 py-1.5 text-sm text-text-secondary hover:border-accent-gold/50 transition-colors"
+            >
+              <SettingsIcon size={15} />
+            </button>
+            {settingsOpen && (
+              <div className="absolute right-0 top-full mt-1 z-20 w-52 bg-bg-card border border-border rounded-xl shadow-lg p-3">
+                <p className="text-text-secondary text-xs font-medium mb-2">Auto-lock after inactivity</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {AUTO_LOCK_OPTIONS.map(o => (
+                    <button
+                      key={o.secs}
+                      onClick={() => void changeAutoLock(o.secs)}
+                      className={`rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                        autoLock === o.secs
+                          ? 'bg-accent-gold text-white'
+                          : 'bg-bg-page border border-border text-text-secondary hover:border-accent-gold/50'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => void lock()}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary hover:border-accent-gold/50 transition-colors"

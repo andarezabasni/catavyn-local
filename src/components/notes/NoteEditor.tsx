@@ -6,13 +6,12 @@ import TaskItem from '@tiptap/extension-task-item'
 import {
   ArrowLeft, Check, Trash2, Pin, ChevronDown, FolderOpen, X, Plus,
   Lock, LockOpen, Bold, Heading1, Heading2, List, ListOrdered,
-  CheckSquare, FileText, ChevronRight, Users, RefreshCw, Download,
+  CheckSquare, FileText, ChevronRight, Download,
 } from 'lucide-react'
 import { exportNoteAsMarkdown, exportNoteAsPdf } from '../../lib/markdown'
 import type { CategoryView as Category } from '../../types/entities'
 import type { TagView as Tag } from '../../types/entities'
 import type { NoteView as Note } from '../../types/entities'
-import { useNoteRealtime } from '../../hooks/useNoteRealtime'
 
 interface NoteEditorProps {
   initialTitle?: string
@@ -36,11 +35,8 @@ interface NoteEditorProps {
   subNotes?: Note[]
   onNewSubNote?: () => void
   onOpenSubNote?: (note: Note) => void
-  // Collaboration
-  noteId?: string
-  onShare?: () => void
   // Optional extra content rendered below the editor body (Local uses this for
-  // the attachment panel; web leaves it undefined).
+  // the attachment panel).
   belowEditor?: React.ReactNode
 }
 
@@ -65,13 +61,10 @@ export default function NoteEditor({
   subNotes = [],
   onNewSubNote,
   onOpenSubNote,
-  noteId,
-  onShare,
   belowEditor,
 }: NoteEditorProps) {
   const [title, setTitle] = useState(initialTitle)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [remoteUpdater, setRemoteUpdater] = useState<string | null>(null)
   const [catOpen, setCatOpen] = useState(false)
   const [tagOpen, setTagOpen] = useState(false)
   const [tagSearch, setTagSearch] = useState('')
@@ -122,13 +115,6 @@ export default function NoteEditor({
     },
     onUpdate: () => autosaveTriggerRef.current(),
   })
-
-  useNoteRealtime(noteId ?? null, useCallback(({ title: remoteTitle, content: remoteContent }) => {
-    setTitle(remoteTitle)
-    editor?.commands.setContent(remoteContent)
-    setRemoteUpdater('collaborator')
-    setTimeout(() => setRemoteUpdater(null), 4000)
-  }, [editor]))
 
   useEffect(() => {
     if (didFocus.current) return
@@ -272,14 +258,6 @@ export default function NoteEditor({
 
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Remote update banner */}
-      {remoteUpdater && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-accent-gold/10 border-b border-accent-gold/20 text-xs text-accent-gold">
-          <RefreshCw size={12} className="shrink-0" />
-          Note updated by a collaborator
-        </div>
-      )}
-
       {/* Toolbar */}
       <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-3 bg-bg-page border-b border-border">
         <button
@@ -329,17 +307,6 @@ export default function NoteEditor({
               </div>
             )}
           </div>
-          {onShare && (
-            <button
-              type="button"
-              onClick={onShare}
-              aria-label="Collaboration"
-              className="flex items-center gap-1.5 rounded-lg px-2 sm:px-3 py-1.5 text-sm text-text-muted hover:text-accent-gold hover:bg-accent-gold/10 transition-colors"
-            >
-              <Users size={14} />
-              <span className="hidden sm:inline">Share</span>
-            </button>
-          )}
           {onPin && (
             <button
               type="button"
