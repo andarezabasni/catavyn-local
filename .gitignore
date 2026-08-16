@@ -29,3 +29,5 @@ dist-ssr
 *.sln
 *.sw?
 CATAVYN_LOCAL_SPEC.md
+docs/VAULT_SECURITY_SPEC.md
+docs/BACKUP_RESTORE_SPEC.md
