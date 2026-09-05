@@ -35,6 +35,7 @@ export default function SearchBar({
         value={value}
         onChange={e => setValue(e.target.value)}
         placeholder={placeholder}
+        spellCheck={false}
         className="w-full bg-bg-card border border-border rounded-xl pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-gold/50 transition-shadow"
       />
       {value && (

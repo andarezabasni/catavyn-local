@@ -119,6 +119,7 @@ export default function LocalHomePage({ onOpenNote }: { onOpenNote?: (id: string
                 onChange={e => setCatName(e.target.value)}
                 autoFocus
                 maxLength={40}
+                spellCheck={false}
                 className="flex-1 min-w-0 rounded-lg border border-border bg-bg-page px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-gold"
               />
               <button type="submit" disabled={!catName.trim()} className="rounded-lg bg-accent-gold px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity">

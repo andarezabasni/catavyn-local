@@ -96,6 +96,7 @@ export default function TaskForm({ defaultDate, task, onSave, onClose }: TaskFor
               placeholder="What needs to be done?"
               maxLength={100}
               required
+              spellCheck={false}
               className="rounded-lg border border-border bg-bg-page px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-gold/50"
             />
           </div>
@@ -109,6 +110,7 @@ export default function TaskForm({ defaultDate, task, onSave, onClose }: TaskFor
               placeholder="Add details…"
               rows={2}
               maxLength={500}
+              spellCheck={false}
               className="rounded-lg border border-border bg-bg-page px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-gold/50 resize-none"
             />
           </div>

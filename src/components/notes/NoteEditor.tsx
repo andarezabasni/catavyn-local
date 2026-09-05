@@ -111,6 +111,9 @@ export default function NoteEditor({
     editorProps: {
       attributes: {
         class: 'prose-editor focus:outline-none',
+        spellcheck: 'false',
+        autocorrect: 'off',
+        autocapitalize: 'off',
       },
     },
     onUpdate: () => autosaveTriggerRef.current(),
@@ -373,6 +376,9 @@ export default function NoteEditor({
           }}
           placeholder="Untitled"
           maxLength={200}
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
           className="w-full bg-transparent text-text-primary font-semibold text-xl sm:text-2xl placeholder:text-text-muted focus:outline-none mb-4"
         />
 
@@ -473,6 +479,7 @@ export default function NoteEditor({
                         type="text"
                         value={tagSearch}
                         onChange={e => setTagSearch(e.target.value)}
+                        spellCheck={false}
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
                             e.preventDefault()

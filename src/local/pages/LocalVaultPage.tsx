@@ -431,6 +431,7 @@ function VaultItemEditor({
                       value={values[f.key] ?? ''}
                       onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
                       rows={f.secret && !revealed[f.key] ? 2 : 3}
+                      spellCheck={false}
                       className="w-full rounded-lg border border-border bg-bg-page px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-gold/50 resize-none"
                       style={f.secret && !revealed[f.key] ? { WebkitTextSecurity: 'disc' } as React.CSSProperties : undefined}
                     />
@@ -439,6 +440,7 @@ function VaultItemEditor({
                       type={f.secret && !revealed[f.key] ? 'password' : 'text'}
                       value={values[f.key] ?? ''}
                       onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
+                      spellCheck={false}
                       className="w-full rounded-lg border border-border bg-bg-page px-3 py-2 pr-16 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-gold/50"
                     />
                   )}

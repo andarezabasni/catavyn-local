@@ -51,6 +51,7 @@ export default function LocalTagsPage({ onTagClick }: { onTagClick?: (tagId: str
             onChange={e => setTagName(e.target.value)}
             autoFocus
             maxLength={30}
+            spellCheck={false}
             className="flex-1 min-w-0 rounded-lg border border-border bg-bg-page px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-gold"
           />
           <button type="submit" disabled={creating || !tagName.trim()} className="rounded-lg bg-accent-gold px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity">
