@@ -29,6 +29,11 @@ function inlineToMd(node: Node): string {
       return inner ? `\`${inner}\`` : ''
     case 'A':
       return `[${inner}](${node.getAttribute('href') ?? ''})`
+    case 'IMG': {
+      const src = node.getAttribute('src') || ''
+      const alt = node.getAttribute('alt') || ''
+      return `![${alt}](${src})`
+    }
     case 'BR':
       return '\n'
     default:
@@ -92,7 +97,7 @@ export function htmlToMarkdown(html: string): string {
       }
     }
   }
-  return blocks.filter(b => b !== '').join('\n\n')
+  return blocks.filter(b => b !== '').join('\n')
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +106,7 @@ export function htmlToMarkdown(html: string): string {
 
 function inlineToHtml(s: string): string {
   let t = escapeHtml(s)
+  t = t.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
   t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
   t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   t = t.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
